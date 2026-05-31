@@ -1,0 +1,1270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OutboundAI Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700;800&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --yellow: #F0C132;
+    --yellow-light: #F7D96A;
+    --yellow-pale: #FBF0C4;
+    --dark: #1A1A1A;
+    --dark-card: #222222;
+    --dark-2: #2D2D2D;
+    --dark-3: #3A3A3A;
+    --white: #FFFFFF;
+    --gray-100: #F5F4F0;
+    --gray-200: #E8E6DF;
+    --gray-300: #CBCAC3;
+    --gray-400: #9A9891;
+    --gray-500: #6B6A64;
+    --text-primary: #1A1A1A;
+    --text-secondary: #6B6A64;
+    --text-muted: #9A9891;
+    --radius-sm: 10px;
+    --radius-md: 16px;
+    --radius-lg: 22px;
+    --radius-xl: 28px;
+    --shadow-sm: 0 2px 8px rgba(0,0,0,0.06);
+    --shadow-md: 0 4px 20px rgba(0,0,0,0.08);
+    --shadow-lg: 0 8px 40px rgba(0,0,0,0.10);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Sora', sans-serif;
+    background: linear-gradient(135deg, #E8E4D8 0%, #F5F0E0 30%, #F9F3D0 60%, #F4E89C 100%);
+    min-height: 100vh;
+    padding: 28px;
+    color: var(--text-primary);
+  }
+
+  .dashboard {
+    max-width: 1160px;
+    margin: 0 auto;
+  }
+
+  /* ── Header ── */
+  .header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    margin-bottom: 22px;
+    animation: fadeDown 0.5s ease both;
+  }
+
+  .header-left h1 {
+    font-size: 2.8rem;
+    font-weight: 700;
+    letter-spacing: -0.03em;
+    color: var(--dark);
+    line-height: 1.1;
+  }
+
+  .metrics-bar {
+    display: flex;
+    gap: 28px;
+    margin-top: 14px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+
+  .metric-item {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+  }
+
+  .metric-item label {
+    font-size: 0.7rem;
+    font-weight: 500;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+
+  .metric-pill {
+    display: flex;
+    align-items: center;
+    border-radius: 50px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    padding: 6px 14px;
+    min-width: 70px;
+    justify-content: center;
+  }
+
+  .metric-pill.dark { background: var(--dark); color: #fff; }
+  .metric-pill.yellow { background: var(--yellow); color: var(--dark); }
+
+  .metric-bar-wrap {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .metric-bar-track {
+    width: 100px;
+    height: 30px;
+    background: var(--gray-200);
+    border-radius: 50px;
+    overflow: hidden;
+    position: relative;
+  }
+
+  .metric-bar-fill {
+    height: 100%;
+    background: repeating-linear-gradient(
+      90deg,
+      var(--gray-300) 0px, var(--gray-300) 4px,
+      transparent 4px, transparent 8px
+    );
+    transition: width 1s ease;
+  }
+
+  .metric-bar-label {
+    font-size: 0.78rem;
+    font-weight: 500;
+    color: var(--text-secondary);
+  }
+
+  .metric-pill.outline {
+    background: transparent;
+    border: 1.5px solid var(--gray-300);
+    color: var(--text-secondary);
+  }
+
+  .header-stats {
+    display: flex;
+    gap: 32px;
+    align-items: center;
+  }
+
+  .stat-big {
+    text-align: center;
+  }
+
+  .stat-big .num {
+    font-size: 2.6rem;
+    font-weight: 700;
+    letter-spacing: -0.04em;
+    color: var(--dark);
+    line-height: 1;
+  }
+
+  .stat-big .lbl {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    font-weight: 400;
+    margin-top: 3px;
+    font-family: 'DM Sans', sans-serif;
+  }
+
+  .stat-big .icon {
+    font-size: 1rem;
+    margin-bottom: 2px;
+    display: block;
+    color: var(--text-muted);
+  }
+
+  /* ── Grid ── */
+  .grid {
+    display: grid;
+    grid-template-columns: 280px 1fr 1fr 260px;
+    grid-template-rows: auto auto;
+    gap: 14px;
+  }
+
+  .card {
+    background: var(--white);
+    border-radius: var(--radius-lg);
+    padding: 22px;
+    box-shadow: var(--shadow-md);
+    animation: fadeUp 0.5s ease both;
+  }
+
+  .card:nth-child(1) { animation-delay: 0.05s; }
+  .card:nth-child(2) { animation-delay: 0.10s; }
+  .card:nth-child(3) { animation-delay: 0.15s; }
+  .card:nth-child(4) { animation-delay: 0.20s; }
+  .card:nth-child(5) { animation-delay: 0.25s; }
+  .card:nth-child(6) { animation-delay: 0.30s; }
+  .card:nth-child(7) { animation-delay: 0.35s; }
+
+  /* ── Profile Card ── */
+  .profile-card {
+    grid-column: 1;
+    grid-row: 1;
+    background: var(--white);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    padding: 0;
+    box-shadow: var(--shadow-md);
+    animation: fadeUp 0.5s ease 0.05s both;
+  }
+
+  .profile-img {
+    width: 100%;
+    height: 210px;
+    background: linear-gradient(160deg, #D4C5A8 0%, #C8B89A 40%, #B8A882 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .profile-avatar {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 5rem;
+    color: rgba(255,255,255,0.4);
+    background: linear-gradient(160deg, #C8A86B 0%, #A8865C 100%);
+  }
+
+  .profile-avatar-inner {
+    width: 90px;
+    height: 90px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.25);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 2.6rem;
+    border: 3px solid rgba(255,255,255,0.4);
+  }
+
+  .profile-info {
+    padding: 18px 20px 20px;
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+  }
+
+  .profile-name {
+    font-size: 1.15rem;
+    font-weight: 700;
+    color: var(--dark);
+    letter-spacing: -0.02em;
+  }
+
+  .profile-role {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    font-family: 'DM Sans', sans-serif;
+    margin-top: 2px;
+  }
+
+  .profile-salary {
+    background: var(--gray-100);
+    border-radius: 50px;
+    padding: 8px 14px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--dark);
+    border: 1.5px solid var(--gray-200);
+  }
+
+  /* ── Accordion ── */
+  .accordion-card {
+    grid-column: 1;
+    grid-row: 2;
+    background: var(--white);
+    border-radius: var(--radius-lg);
+    padding: 6px 0;
+    box-shadow: var(--shadow-md);
+    animation: fadeUp 0.5s ease 0.30s both;
+  }
+
+  .accordion-item {
+    padding: 13px 20px;
+    border-bottom: 1px solid var(--gray-100);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+
+  .accordion-item:last-child { border-bottom: none; }
+  .accordion-item:hover { background: var(--gray-100); border-radius: var(--radius-sm); }
+
+  .accordion-title {
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--dark);
+    font-family: 'DM Sans', sans-serif;
+  }
+
+  .accordion-chevron {
+    color: var(--text-muted);
+    font-size: 0.7rem;
+    transition: transform 0.2s;
+  }
+
+  .accordion-item.open .accordion-chevron { transform: rotate(180deg); }
+
+  .accordion-body {
+    padding: 0 20px;
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.3s ease, padding 0.3s ease;
+  }
+
+  .accordion-item.open + .accordion-body {
+    max-height: 120px;
+    padding: 0 20px 12px;
+  }
+
+  .device-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 0 4px;
+  }
+
+  .device-icon {
+    width: 36px;
+    height: 36px;
+    background: linear-gradient(135deg, #D44000, #FF6B35);
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.1rem;
+  }
+
+  .device-name { font-size: 0.82rem; font-weight: 600; }
+  .device-ver { font-size: 0.7rem; color: var(--text-muted); font-family: 'DM Sans', sans-serif; }
+
+  /* ── Progress Card ── */
+  .progress-card {
+    grid-column: 2;
+    grid-row: 1;
+    position: relative;
+  }
+
+  .card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 6px;
+  }
+
+  .card-title {
+    font-size: 1.1rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+  }
+
+  .card-link-btn {
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    background: var(--gray-100);
+    border: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    transition: background 0.2s;
+  }
+
+  .card-link-btn:hover { background: var(--yellow); color: var(--dark); }
+
+  .progress-hours {
+    font-size: 2.8rem;
+    font-weight: 700;
+    letter-spacing: -0.04em;
+    color: var(--dark);
+    line-height: 1;
+  }
+
+  .progress-sub {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    font-family: 'DM Sans', sans-serif;
+    line-height: 1.4;
+  }
+
+  .chart-area {
+    display: flex;
+    align-items: flex-end;
+    gap: 8px;
+    height: 90px;
+    margin-top: 16px;
+    padding-bottom: 20px;
+    position: relative;
+  }
+
+  .bar-col {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    flex: 1;
+  }
+
+  .bar {
+    width: 100%;
+    max-width: 18px;
+    border-radius: 4px 4px 0 0;
+    background: var(--gray-200);
+    transition: height 0.8s cubic-bezier(.34,1.56,.64,1);
+    position: relative;
+  }
+
+  .bar.active { background: var(--dark); }
+  .bar.highlight { background: var(--yellow); }
+
+  .bar-tooltip {
+    position: absolute;
+    top: -28px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--yellow);
+    color: var(--dark);
+    font-size: 0.65rem;
+    font-weight: 700;
+    padding: 3px 7px;
+    border-radius: 20px;
+    white-space: nowrap;
+  }
+
+  .bar-dot {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--gray-300);
+  }
+
+  .bar-dot.active { background: var(--dark); }
+  .bar-dot.highlight { background: var(--yellow); }
+
+  .bar-label {
+    font-size: 0.62rem;
+    color: var(--text-muted);
+    font-family: 'DM Sans', sans-serif;
+    font-weight: 500;
+  }
+
+  /* ── Time Tracker ── */
+  .timer-card {
+    grid-column: 3;
+    grid-row: 1;
+  }
+
+  .timer-ring-wrap {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    margin: 14px 0 10px;
+  }
+
+  .timer-ring {
+    position: relative;
+    width: 120px;
+    height: 120px;
+  }
+
+  .timer-ring svg {
+    transform: rotate(-90deg);
+  }
+
+  .timer-ring-bg {
+    fill: none;
+    stroke: var(--gray-100);
+    stroke-width: 8;
+  }
+
+  .timer-ring-fill {
+    fill: none;
+    stroke: var(--yellow);
+    stroke-width: 8;
+    stroke-linecap: round;
+    stroke-dasharray: 339.29;
+    stroke-dashoffset: 84.82;
+    transition: stroke-dashoffset 0.5s ease;
+  }
+
+  .timer-center {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    text-align: center;
+  }
+
+  .timer-display {
+    font-size: 1.5rem;
+    font-weight: 700;
+    letter-spacing: -0.03em;
+    color: var(--dark);
+    line-height: 1;
+  }
+
+  .timer-label {
+    font-size: 0.6rem;
+    color: var(--text-muted);
+    font-family: 'DM Sans', sans-serif;
+    margin-top: 2px;
+  }
+
+  .timer-controls {
+    display: flex;
+    justify-content: center;
+    gap: 12px;
+    align-items: center;
+    margin-top: 8px;
+  }
+
+  .timer-btn {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    border: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.9rem;
+    transition: all 0.2s;
+  }
+
+  .timer-btn.play { background: var(--gray-100); color: var(--dark); }
+  .timer-btn.pause { background: var(--gray-100); color: var(--dark); }
+  .timer-btn.alarm { background: var(--dark); color: var(--white); }
+  .timer-btn:hover { transform: scale(1.08); }
+
+  /* ── Onboarding Card ── */
+  .onboarding-card {
+    grid-column: 4;
+    grid-row: 1 / 3;
+    background: var(--white);
+    border-radius: var(--radius-lg);
+    padding: 22px;
+    box-shadow: var(--shadow-md);
+    animation: fadeUp 0.5s ease 0.20s both;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .onboarding-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .onboarding-pct {
+    font-size: 1.8rem;
+    font-weight: 700;
+    letter-spacing: -0.04em;
+    color: var(--dark);
+  }
+
+  .onboarding-bars {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 4px;
+  }
+
+  .ob-bar-item {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .ob-bar-pct {
+    font-size: 0.65rem;
+    color: var(--text-muted);
+    font-family: 'DM Sans', sans-serif;
+  }
+
+  .ob-bar {
+    height: 32px;
+    border-radius: 8px;
+  }
+
+  .ob-bar.yellow { background: var(--yellow); }
+  .ob-bar.dark { background: var(--dark-2); }
+  .ob-bar.gray { background: var(--gray-200); }
+
+  .ob-bar-tag {
+    font-size: 0.65rem;
+    font-weight: 600;
+    color: var(--dark);
+    font-family: 'DM Sans', sans-serif;
+    padding: 4px 0 0;
+  }
+
+  .onboarding-dark-card {
+    background: var(--dark-card);
+    border-radius: var(--radius-md);
+    padding: 16px;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .ob-task-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 14px;
+  }
+
+  .ob-task-title {
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: #fff;
+  }
+
+  .ob-task-count {
+    font-size: 1.4rem;
+    font-weight: 700;
+    color: #fff;
+    letter-spacing: -0.03em;
+  }
+
+  .ob-tasks {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    flex: 1;
+  }
+
+  .ob-task-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 8px;
+    border-radius: 10px;
+    transition: background 0.2s;
+  }
+
+  .ob-task-item:hover { background: rgba(255,255,255,0.05); }
+
+  .ob-task-icon {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.08);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.7rem;
+    color: rgba(255,255,255,0.5);
+    flex-shrink: 0;
+  }
+
+  .ob-task-info { flex: 1; }
+  .ob-task-name { font-size: 0.75rem; font-weight: 500; color: rgba(255,255,255,0.85); }
+  .ob-task-name.done { text-decoration: line-through; color: rgba(255,255,255,0.35); }
+  .ob-task-time { font-size: 0.62rem; color: rgba(255,255,255,0.35); font-family: 'DM Sans', sans-serif; }
+
+  .ob-check {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    border: 1.5px solid rgba(255,255,255,0.15);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.55rem;
+    flex-shrink: 0;
+  }
+
+  .ob-check.done { background: var(--yellow); border-color: var(--yellow); color: var(--dark); }
+
+  /* ── Calendar Card ── */
+  .calendar-card {
+    grid-column: 2 / 4;
+    grid-row: 2;
+    padding: 20px 22px;
+  }
+
+  .cal-nav {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 14px;
+  }
+
+  .cal-nav-month {
+    font-size: 1rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+  }
+
+  .cal-nav-adj {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    font-family: 'DM Sans', sans-serif;
+    cursor: pointer;
+    transition: color 0.2s;
+  }
+
+  .cal-nav-adj:hover { color: var(--dark); }
+
+  .cal-days-header {
+    display: grid;
+    grid-template-columns: 70px repeat(6, 1fr);
+    gap: 4px;
+    margin-bottom: 8px;
+  }
+
+  .cal-day-col {
+    text-align: center;
+  }
+
+  .cal-day-name {
+    font-size: 0.65rem;
+    color: var(--text-muted);
+    font-family: 'DM Sans', sans-serif;
+    font-weight: 500;
+    text-transform: uppercase;
+  }
+
+  .cal-day-num {
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--dark);
+    margin-top: 2px;
+  }
+
+  .cal-day-num.today {
+    background: var(--dark);
+    color: #fff;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 2px auto 0;
+    font-size: 0.75rem;
+  }
+
+  .cal-grid {
+    display: grid;
+    grid-template-columns: 70px repeat(6, 1fr);
+    gap: 4px;
+  }
+
+  .cal-time {
+    font-size: 0.65rem;
+    color: var(--text-muted);
+    font-family: 'DM Sans', sans-serif;
+    padding-top: 2px;
+    text-align: right;
+    padding-right: 8px;
+  }
+
+  .cal-slot {
+    height: 36px;
+    border-radius: 8px;
+    background: transparent;
+    position: relative;
+  }
+
+  .cal-event {
+    background: var(--dark);
+    border-radius: 10px;
+    padding: 6px 10px;
+    position: absolute;
+    left: 4px;
+    right: 4px;
+    z-index: 1;
+  }
+
+  .cal-event.yellow { background: var(--yellow); }
+
+  .cal-event-title {
+    font-size: 0.68rem;
+    font-weight: 600;
+    color: #fff;
+    line-height: 1.2;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .cal-event.yellow .cal-event-title { color: var(--dark); }
+
+  .cal-event-sub {
+    font-size: 0.58rem;
+    color: rgba(255,255,255,0.6);
+    font-family: 'DM Sans', sans-serif;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .cal-event.yellow .cal-event-sub { color: rgba(26,26,26,0.6); }
+
+  .cal-avatars {
+    display: flex;
+    margin-top: 3px;
+  }
+
+  .cal-av {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    border: 1.5px solid var(--dark);
+    margin-left: -4px;
+    font-size: 0.55rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-weight: 700;
+  }
+
+  .cal-av:first-child { margin-left: 0; }
+  .cal-av.a { background: #E8825A; }
+  .cal-av.b { background: #5AB8E8; }
+  .cal-av.c { background: #8AE85A; }
+  .cal-av.d { background: #E85AB8; }
+
+  /* ── Animations ── */
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(16px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  @keyframes fadeDown {
+    from { opacity: 0; transform: translateY(-10px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  /* ── Scrollbar ── */
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--gray-300); border-radius: 3px; }
+
+  /* ── Responsive ── */
+  @media (max-width: 1000px) {
+    body { padding: 16px; }
+    .grid { grid-template-columns: 1fr 1fr; grid-template-rows: auto; }
+    .onboarding-card { grid-column: 1 / 3; grid-row: auto; flex-direction: row; flex-wrap: wrap; }
+    .calendar-card { grid-column: 1 / 3; }
+    .header-left h1 { font-size: 2rem; }
+  }
+</style>
+</head>
+<body>
+
+<div class="dashboard">
+
+  <!-- ── Header ── -->
+  <div class="header">
+    <div class="header-left">
+      <h1>Welcome in, OutboundAI</h1>
+      <div class="metrics-bar">
+        <div class="metric-item">
+          <label>Active Calls</label>
+          <div class="metric-pill dark">24%</div>
+        </div>
+        <div class="metric-item">
+          <label>Converted</label>
+          <div class="metric-pill yellow">18%</div>
+        </div>
+        <div class="metric-item">
+          <label>Campaign Time</label>
+          <div class="metric-bar-wrap">
+            <div class="metric-bar-track">
+              <div class="metric-bar-fill" style="width:62%"></div>
+            </div>
+            <span class="metric-bar-label">62%</span>
+          </div>
+        </div>
+        <div class="metric-item">
+          <label>Output Score</label>
+          <div class="metric-pill outline">8.4</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="header-stats">
+      <div class="stat-big">
+        <span class="icon">🤖</span>
+        <div class="num">47</div>
+        <div class="lbl">Agents</div>
+      </div>
+      <div class="stat-big">
+        <span class="icon">📞</span>
+        <div class="num">312</div>
+        <div class="lbl">Calls Today</div>
+      </div>
+      <div class="stat-big">
+        <span class="icon">✅</span>
+        <div class="num">89</div>
+        <div class="lbl">Conversions</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Main Grid ── -->
+  <div class="grid">
+
+    <!-- Profile Card -->
+    <div class="profile-card">
+      <div class="profile-img">
+        <div class="profile-avatar">
+          <div class="profile-avatar-inner">🎙️</div>
+        </div>
+      </div>
+      <div class="profile-info">
+        <div>
+          <div class="profile-name">Alex Rivera</div>
+          <div class="profile-role">Senior AI Voice Agent</div>
+        </div>
+        <div class="profile-salary">$4,800</div>
+      </div>
+    </div>
+
+    <!-- Progress Card -->
+    <div class="card progress-card">
+      <div class="card-header">
+        <div class="card-title">Progress</div>
+        <button class="card-link-btn">↗</button>
+      </div>
+      <div style="display:flex;gap:12px;align-items:baseline;margin-top:4px;">
+        <div class="progress-hours">8.4<span style="font-size:1.2rem;font-weight:500;">h</span></div>
+        <div class="progress-sub">Active Time<br>this week</div>
+      </div>
+      <div class="chart-area" id="chartArea">
+        <!-- bars injected by JS -->
+      </div>
+    </div>
+
+    <!-- Time Tracker -->
+    <div class="card timer-card">
+      <div class="card-header">
+        <div class="card-title">Live Call Timer</div>
+        <button class="card-link-btn">↗</button>
+      </div>
+      <div class="timer-ring-wrap">
+        <div class="timer-ring">
+          <svg width="120" height="120" viewBox="0 0 120 120">
+            <circle class="timer-ring-bg" cx="60" cy="60" r="54"/>
+            <circle class="timer-ring-fill" id="timerRing" cx="60" cy="60" r="54"/>
+          </svg>
+          <div class="timer-center">
+            <div class="timer-display" id="timerDisplay">03:41</div>
+            <div class="timer-label">Call Duration</div>
+          </div>
+        </div>
+      </div>
+      <div class="timer-controls">
+        <button class="timer-btn play" id="playBtn">▶</button>
+        <button class="timer-btn pause" id="pauseBtn">⏸</button>
+        <button class="timer-btn alarm">⏰</button>
+      </div>
+    </div>
+
+    <!-- Onboarding Card -->
+    <div class="onboarding-card">
+      <div class="onboarding-header">
+        <div class="card-title">Agent Setup</div>
+        <div class="onboarding-pct">18%</div>
+      </div>
+
+      <div class="onboarding-bars">
+        <div class="ob-bar-item">
+          <div class="ob-bar-pct">40%</div>
+          <div class="ob-bar yellow"></div>
+          <div class="ob-bar-tag">Config</div>
+        </div>
+        <div class="ob-bar-item">
+          <div class="ob-bar-pct">35%</div>
+          <div class="ob-bar dark"></div>
+          <div class="ob-bar-tag">Train</div>
+        </div>
+        <div class="ob-bar-item">
+          <div class="ob-bar-pct">0%</div>
+          <div class="ob-bar gray"></div>
+          <div class="ob-bar-tag">Deploy</div>
+        </div>
+      </div>
+
+      <div class="onboarding-dark-card">
+        <div class="ob-task-header">
+          <div class="ob-task-title">Setup Tasks</div>
+          <div class="ob-task-count">3/9</div>
+        </div>
+        <div class="ob-tasks">
+          <div class="ob-task-item">
+            <div class="ob-task-icon">🎙️</div>
+            <div class="ob-task-info">
+              <div class="ob-task-name done">Voice Config</div>
+              <div class="ob-task-time">Jun 1, 09:00</div>
+            </div>
+            <div class="ob-check done">✓</div>
+          </div>
+          <div class="ob-task-item">
+            <div class="ob-task-icon">📋</div>
+            <div class="ob-task-info">
+              <div class="ob-task-name done">Script Upload</div>
+              <div class="ob-task-time">Jun 1, 10:30</div>
+            </div>
+            <div class="ob-check done">✓</div>
+          </div>
+          <div class="ob-task-item">
+            <div class="ob-task-icon">🔗</div>
+            <div class="ob-task-info">
+              <div class="ob-task-name done">CRM Connect</div>
+              <div class="ob-task-time">Jun 1, 11:15</div>
+            </div>
+            <div class="ob-check done">✓</div>
+          </div>
+          <div class="ob-task-item">
+            <div class="ob-task-icon">🧠</div>
+            <div class="ob-task-info">
+              <div class="ob-task-name">Model Training</div>
+              <div class="ob-task-time">Jun 1, 13:00</div>
+            </div>
+            <div class="ob-check"></div>
+          </div>
+          <div class="ob-task-item">
+            <div class="ob-task-icon">🛡️</div>
+            <div class="ob-task-info">
+              <div class="ob-task-name">Compliance Check</div>
+              <div class="ob-task-time">Jun 1, 14:30</div>
+            </div>
+            <div class="ob-check"></div>
+          </div>
+          <div class="ob-task-item">
+            <div class="ob-task-icon">🚀</div>
+            <div class="ob-task-info">
+              <div class="ob-task-name">Live Deploy</div>
+              <div class="ob-task-time">Jun 2, 09:00</div>
+            </div>
+            <div class="ob-check"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Calendar Card -->
+    <div class="card calendar-card">
+      <div class="cal-nav">
+        <span class="cal-nav-adj">◀ May</span>
+        <span class="cal-nav-month">June 2026</span>
+        <span class="cal-nav-adj">July ▶</span>
+      </div>
+
+      <div class="cal-days-header">
+        <div></div>
+        <div class="cal-day-col">
+          <div class="cal-day-name">Mon</div>
+          <div class="cal-day-num">29</div>
+        </div>
+        <div class="cal-day-col">
+          <div class="cal-day-name">Tue</div>
+          <div class="cal-day-num">30</div>
+        </div>
+        <div class="cal-day-col">
+          <div class="cal-day-name">Wed</div>
+          <div class="cal-day-num today">31</div>
+        </div>
+        <div class="cal-day-col">
+          <div class="cal-day-name">Thu</div>
+          <div class="cal-day-num">1</div>
+        </div>
+        <div class="cal-day-col">
+          <div class="cal-day-name">Fri</div>
+          <div class="cal-day-num">2</div>
+        </div>
+        <div class="cal-day-col">
+          <div class="cal-day-name">Sat</div>
+          <div class="cal-day-num">3</div>
+        </div>
+      </div>
+
+      <div class="cal-grid">
+        <!-- 8:00 am row -->
+        <div class="cal-time">8:00 am</div>
+        <div class="cal-slot"></div>
+        <div class="cal-slot"></div>
+        <div class="cal-slot" style="position:relative">
+          <div class="cal-event" style="height:70px">
+            <div class="cal-event-title">Team Sync Call</div>
+            <div class="cal-event-sub">Daily standup & KPIs</div>
+            <div class="cal-avatars">
+              <div class="cal-av a">A</div>
+              <div class="cal-av b">B</div>
+              <div class="cal-av c">C</div>
+            </div>
+          </div>
+        </div>
+        <div class="cal-slot"></div>
+        <div class="cal-slot"></div>
+        <div class="cal-slot"></div>
+
+        <!-- 9:00 am row -->
+        <div class="cal-time">9:00 am</div>
+        <div class="cal-slot"></div>
+        <div class="cal-slot"></div>
+        <div class="cal-slot"></div>
+        <div class="cal-slot"></div>
+        <div class="cal-slot"></div>
+        <div class="cal-slot"></div>
+
+        <!-- 10:00 am row -->
+        <div class="cal-time">10:00 am</div>
+        <div class="cal-slot"></div>
+        <div class="cal-slot"></div>
+        <div class="cal-slot"></div>
+        <div class="cal-slot" style="position:relative">
+          <div class="cal-event yellow" style="height:70px">
+            <div class="cal-event-title">Campaign Launch</div>
+            <div class="cal-event-sub">Q3 outbound push</div>
+            <div class="cal-avatars">
+              <div class="cal-av a" style="border-color:var(--yellow)">A</div>
+              <div class="cal-av d" style="border-color:var(--yellow)">D</div>
+            </div>
+          </div>
+        </div>
+        <div class="cal-slot"></div>
+        <div class="cal-slot"></div>
+
+        <!-- 11:00 am row -->
+        <div class="cal-time">11:00 am</div>
+        <div class="cal-slot"></div>
+        <div class="cal-slot"></div>
+        <div class="cal-slot"></div>
+        <div class="cal-slot"></div>
+        <div class="cal-slot"></div>
+        <div class="cal-slot"></div>
+      </div>
+    </div>
+
+    <!-- Accordion Card -->
+    <div class="accordion-card">
+      <div class="accordion-item" onclick="toggleAcc(this)">
+        <span class="accordion-title">Campaign Settings</span>
+        <span class="accordion-chevron">▼</span>
+      </div>
+      <div class="accordion-body">
+        <div style="font-size:0.75rem;color:var(--text-muted);font-family:'DM Sans',sans-serif;padding:6px 0;">
+          Max calls/hr: 50 &nbsp;|&nbsp; Retry: 3x &nbsp;|&nbsp; Hours: 9–5
+        </div>
+      </div>
+
+      <div class="accordion-item open" onclick="toggleAcc(this)">
+        <span class="accordion-title">Integrations</span>
+        <span class="accordion-chevron">▼</span>
+      </div>
+      <div class="accordion-body" style="max-height:120px;padding:0 20px 12px;">
+        <div class="device-row">
+          <div class="device-icon">🔗</div>
+          <div>
+            <div class="device-name">Salesforce CRM</div>
+            <div class="device-ver">Connected · Syncing</div>
+          </div>
+          <span style="margin-left:auto;font-size:0.7rem;color:var(--text-muted)">⋮</span>
+        </div>
+      </div>
+
+      <div class="accordion-item" onclick="toggleAcc(this)">
+        <span class="accordion-title">Billing Summary</span>
+        <span class="accordion-chevron">▼</span>
+      </div>
+      <div class="accordion-body">
+        <div style="font-size:0.75rem;color:var(--text-muted);font-family:'DM Sans',sans-serif;padding:6px 0;">
+          Plan: Pro &nbsp;|&nbsp; $299/mo &nbsp;|&nbsp; Renews Jul 1
+        </div>
+      </div>
+
+      <div class="accordion-item" onclick="toggleAcc(this)">
+        <span class="accordion-title">Compliance & TCPA</span>
+        <span class="accordion-chevron">▼</span>
+      </div>
+      <div class="accordion-body">
+        <div style="font-size:0.75rem;color:var(--text-muted);font-family:'DM Sans',sans-serif;padding:6px 0;">
+          DNC list active · Opt-out enabled · Audit log on
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+// ── Accordion ──
+function toggleAcc(el) {
+  const wasOpen = el.classList.contains('open');
+  document.querySelectorAll('.accordion-item.open').forEach(i => i.classList.remove('open'));
+  if (!wasOpen) el.classList.add('open');
+}
+
+// ── Chart Bars ──
+const chartData = [
+  { label:'S', h:22, type:'normal' },
+  { label:'M', h:45, type:'active' },
+  { label:'T', h:30, type:'active' },
+  { label:'W', h:55, type:'active' },
+  { label:'T', h:38, type:'active' },
+  { label:'F', h:75, type:'highlight', tip:'7h 12m' },
+  { label:'S', h:15, type:'normal' },
+];
+
+const area = document.getElementById('chartArea');
+chartData.forEach(d => {
+  const col = document.createElement('div');
+  col.className = 'bar-col';
+  col.innerHTML = `
+    <div class="bar ${d.type}" style="height:0px" data-h="${d.h}">
+      ${d.tip ? `<div class="bar-tooltip">${d.tip}</div>` : ''}
+    </div>
+    <div class="bar-dot ${d.type}"></div>
+    <div class="bar-label">${d.label}</div>
+  `;
+  area.appendChild(col);
+});
+
+setTimeout(() => {
+  document.querySelectorAll('.bar[data-h]').forEach(b => {
+    b.style.height = b.dataset.h + 'px';
+  });
+}, 150);
+
+// ── Timer ──
+let seconds = 221;
+let running = true;
+const timerDisplay = document.getElementById('timerDisplay');
+const ring = document.getElementById('timerRing');
+const circumference = 339.29;
+
+function updateTimer() {
+  const m = Math.floor(seconds / 60).toString().padStart(2,'0');
+  const s = (seconds % 60).toString().padStart(2,'0');
+  timerDisplay.textContent = `${m}:${s}`;
+  const pct = (seconds % 600) / 600;
+  ring.style.strokeDashoffset = circumference * (1 - pct);
+}
+
+setInterval(() => {
+  if (running) { seconds++; updateTimer(); }
+}, 1000);
+
+document.getElementById('playBtn').onclick = () => { running = true; };
+document.getElementById('pauseBtn').onclick = () => { running = false; };
+
+updateTimer();
+</script>
+</body>
+</html>
