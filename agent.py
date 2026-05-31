@@ -397,6 +397,7 @@ async def entrypoint(ctx: agents.JobContext) -> None:
             ctx.shutdown()
             return
         await _log("info", f"Call ANSWERED — {phone_number} picked up, starting AI session now")
+        tool_ctx._call_start_time = time.time()  # reset to actual answer time for accurate billing
 
     # ── Decide opening line + pre-generate it (overlaps session.start) ────────
     from datetime import datetime as _dt
@@ -496,11 +497,11 @@ async def entrypoint(ctx: agents.JobContext) -> None:
                  or participant.identity.startswith("sip_")
         if is_sip:
             _disconnect_event.set()
-            _sync_log_in_thread()
+            # Do NOT block the event loop here — _do_fallback_log runs after wait() returns
 
     def _on_disconnected():
         _disconnect_event.set()
-        _sync_log_in_thread()
+        # Do NOT block the event loop here — _do_fallback_log runs after wait() returns
 
     ctx.room.on("participant_disconnected", _on_participant_disconnected)
     ctx.room.on("disconnected", _on_disconnected)
