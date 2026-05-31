@@ -385,8 +385,9 @@ async def entrypoint(ctx: agents.JobContext) -> None:
 
     # ── Decide opening line + pre-generate it (overlaps session.start) ────────
     from datetime import datetime as _dt
-    _hour = _dt.now().hour
-    _tod = "morning" if _hour < 12 else "afternoon" if _hour < 17 else "evening"
+    from zoneinfo import ZoneInfo
+    _hour = _dt.now(ZoneInfo("Asia/Kolkata")).hour
+    _tod = "morning" if _hour < 12 else "afternoon" if _hour < 16 else "evening"
 
     gemini_model = os.getenv("GEMINI_MODEL", "gemini-3.1-flash-live-preview")
     opening_voice = voice_override or os.getenv("GEMINI_TTS_VOICE", "Aoede")
@@ -470,6 +471,27 @@ async def entrypoint(ctx: agents.JobContext) -> None:
 
     ctx.room.on("participant_disconnected", _on_participant_disconnected)
     ctx.room.on("disconnected", _on_disconnected)
+
+    # ── Guaranteed flush on job teardown ─────────────────────────────────────
+    # When the caller hangs up, LiveKit tears down the job and cancels this
+    # entrypoint coroutine — killing any create_task(_do_fallback_log()) before
+    # it finishes. Shutdown callbacks are awaited by the framework during
+    # graceful shutdown, so this is the only path that survives a teardown race.
+    # _do_fallback_log is idempotent, so it co-exists with the callback/wait paths.
+    ctx.add_shutdown_callback(_do_fallback_log)
+
+    # Catch the race where the caller hung up between answer and listener
+    # registration — the disconnect event already fired and we'd otherwise
+    # wait out the full 1-hour timeout. If no SIP participant is present, mark
+    # the disconnect now so the wait below returns immediately and logs.
+    if phone_number:
+        _sip_present = any(
+            p.identity == _sip_identity or p.identity.startswith("sip_")
+            for p in ctx.room.remote_participants.values()
+        )
+        if not _sip_present:
+            await _log("info", "SIP participant already gone before listener setup — flagging disconnect")
+            _disconnect_event.set()
 
     # ── Optional S3 recording ────────────────────────────────────────────────
     if phone_number:
