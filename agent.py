@@ -429,6 +429,31 @@ async def entrypoint(ctx: agents.JobContext) -> None:
     await session.start(**_session_kwargs)
     await _log("info", "Agent session started — AI ready, generating greeting")
 
+    # ── Register disconnect listeners NOW — before greeting — so early hang-ups are caught ──
+    _sip_identity = f"sip_{phone_number}" if phone_number else None
+    _disconnect_event = asyncio.Event()
+
+    def _on_participant_disconnected(participant: rtc.RemoteParticipant):
+        if _sip_identity and participant.identity == _sip_identity:
+            _disconnect_event.set()
+        elif participant.identity.startswith("sip_"):
+            _disconnect_event.set()
+
+    def _on_disconnected():
+        _disconnect_event.set()
+
+    ctx.room.on("participant_disconnected", _on_participant_disconnected)
+    ctx.room.on("disconnected", _on_disconnected)
+
+    # Also check if the SIP participant already left before we registered the listener
+    existing_sip = any(
+        p.identity == _sip_identity or p.identity.startswith("sip_")
+        for p in ctx.room.remote_participants.values()
+    )
+    if (phone_number or is_inbound) and not existing_sip and _sip_identity:
+        await _log("warning", "SIP participant not found after session start — may have already disconnected")
+        _disconnect_event.set()
+
     # ── Optional S3 recording ────────────────────────────────────────────────
     if phone_number:
         _aws_key    = os.getenv("S3_ACCESS_KEY_ID") or os.getenv("AWS_ACCESS_KEY_ID", "")
@@ -456,9 +481,6 @@ async def entrypoint(ctx: agents.JobContext) -> None:
                 await _log("warning", f"Recording start failed (non-fatal): {_exc}")
 
     # ── Greeting — make the agent SPEAK FIRST ─────────────────────────────────
-    # gemini-3.1 hard-blocks generate_reply(), so we play a pre-generated TTS
-    # opening line (same voice) via say(). Mutable models (2.5) greet natively
-    # via generate_reply().
     if _needs_tts_opener:
         try:
             pcm = await _opening_task
@@ -480,23 +502,8 @@ async def entrypoint(ctx: agents.JobContext) -> None:
         except Exception as _gr_exc:
             await _log("warning", f"generate_reply failed: {_gr_exc}")
 
-    # ── Keep session alive until SIP participant actually leaves ─────────────
-    # Watch participant_disconnected for any SIP participant (inbound or outbound).
-    _sip_identity = f"sip_{phone_number}" if phone_number else None
+    # ── Wait for SIP participant to leave, then fallback-log if needed ────────
     if phone_number or is_inbound:
-        _disconnect_event = asyncio.Event()
-
-        def _on_participant_disconnected(participant: rtc.RemoteParticipant):
-            if _sip_identity and participant.identity == _sip_identity:
-                _disconnect_event.set()
-            elif participant.identity.startswith("sip_"):
-                _disconnect_event.set()
-        def _on_disconnected():
-            _disconnect_event.set()
-
-        ctx.room.on("participant_disconnected", _on_participant_disconnected)
-        ctx.room.on("disconnected", _on_disconnected)
-
         try:
             await asyncio.wait_for(_disconnect_event.wait(), timeout=3600)
         except asyncio.TimeoutError:
@@ -504,7 +511,7 @@ async def entrypoint(ctx: agents.JobContext) -> None:
 
         await _log("info", f"SIP participant disconnected — ending session for {phone_number}")
 
-        # Fallback log: if model never called end_call() (early hang-up, etc.), log it now
+        # Fallback log: fires for any call where model never called end_call()
         if not tool_ctx._call_logged:
             duration = int(time.time() - tool_ctx._call_start_time)
             try:
