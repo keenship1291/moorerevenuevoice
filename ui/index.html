@@ -1076,25 +1076,52 @@ tbody tr:hover td { background: var(--gray-50); }
             <h2>Call Details</h2>
             <form id="call-form" onsubmit="submitCall(event)">
               <div class="form-group"><label>Phone Number (E.164)</label><input type="text" id="f-phone" placeholder="+919876543210" required /></div>
-              <div class="agent-form-grid">
-                <div class="form-group"><label>Lead Name</label><input type="text" id="f-name" placeholder="Full name" /></div>
-                <div class="form-group"><label>Business Name</label><input type="text" id="f-biz" placeholder="Company" /></div>
+              <div class="form-group"><label>Lead Name</label><input type="text" id="f-name" placeholder="Full name" /></div>
+
+              <!-- Collapse toggle -->
+              <button type="button" id="f-details-toggle" onclick="toggleCallDetails()" style="background:none;border:1px solid var(--border);border-radius:6px;padding:6px 12px;cursor:pointer;font-size:13px;color:var(--text-muted);display:flex;align-items:center;gap:6px;margin-bottom:12px">
+                <span id="f-details-arrow">▾</span> Call Details
+              </button>
+
+              <div id="f-details-body">
+                <div class="agent-form-grid">
+                  <div class="form-group"><label>Agent Name</label><input type="text" id="f-agent-name" value="Priya" /></div>
+                  <div class="form-group"><label>Business Name</label><input type="text" id="f-biz" value="Green Valley Builders" /></div>
+                </div>
+                <div class="agent-form-grid">
+                  <div class="form-group"><label>Service Type</label><input type="text" id="f-service" value="site visit" /></div>
+                  <div class="form-group"><label>Project Type</label><input type="text" id="f-project-type" value="township" /></div>
+                </div>
+                <div class="agent-form-grid">
+                  <div class="form-group"><label>Project Name</label><input type="text" id="f-project-name" value="Green Valley Township" /></div>
+                  <div class="form-group"><label>Project Location</label><input type="text" id="f-project-location" value="Nagpur Ring Road" /></div>
+                </div>
+                <div class="agent-form-grid">
+                  <div class="form-group"><label>Project Status</label><input type="text" id="f-project-status" value="soft launch" /></div>
+                  <div class="form-group" style="display:flex;gap:8px">
+                    <div style="flex:1"><label>Site Visit Day 1</label><input type="text" id="f-sv-day1" value="is Saturday" /></div>
+                    <div style="flex:1"><label>Site Visit Day 2</label><input type="text" id="f-sv-day2" value="is Sunday" /></div>
+                  </div>
+                </div>
+                <div class="form-group"><label>Key Benefit 1</label><input type="text" id="f-benefit-1" value="Nagpur Ring Road pe prime location hai, future growth pakka hai" /></div>
+                <div class="form-group"><label>Key Benefit 2</label><input type="text" id="f-benefit-2" value="18 mahine mein 30% appreciation expected hai, investors ke liye best option" /></div>
+                <div class="form-group"><label>Key Benefit 3</label><input type="text" id="f-benefit-3" value="pre-launch pricing sirf is week tak available hai, baad mein rate badh jaayega" /></div>
+                <div class="agent-form-grid">
+                  <div class="form-group"><label>Agent Profile</label><select id="f-agent-profile"><option value="">— Default —</option></select></div>
+                  <div class="form-group"><label>SIP Provider</label><select id="f-sip-provider"><option value="vobiz">Vobiz</option><option value="voicelink">VoiceLink</option></select></div>
+                </div>
+                <div class="form-group">
+                  <label style="cursor:pointer;display:inline-flex;align-items:center;gap:6px;font-weight:500">
+                    <input type="checkbox" id="f-custom-prompt-toggle" onchange="document.getElementById('f-custom-prompt-group').classList.toggle('hidden',!this.checked)" />
+                    Override system prompt for this call
+                  </label>
+                </div>
+                <div class="form-group hidden" id="f-custom-prompt-group">
+                  <label>Custom System Prompt</label>
+                  <textarea id="f-custom-prompt" placeholder="Custom system prompt…" rows="6"></textarea>
+                </div>
               </div>
-              <div class="agent-form-grid">
-                <div class="form-group"><label>Service Type</label><input type="text" id="f-service" placeholder="e.g. Consultation" /></div>
-                <div class="form-group"><label>SIP Provider</label><select id="f-sip-provider"><option value="vobiz">Vobiz</option><option value="voicelink">VoiceLink</option></select></div>
-              </div>
-              <div class="form-group"><label>Agent Profile</label><select id="f-agent-profile"><option value="">— Default —</option></select></div>
-              <div class="form-group">
-                <label style="cursor:pointer;display:inline-flex;align-items:center;gap:6px;font-weight:500">
-                  <input type="checkbox" id="f-custom-prompt-toggle" onchange="document.getElementById('f-custom-prompt-group').classList.toggle('hidden',!this.checked)" />
-                  Override system prompt for this call
-                </label>
-              </div>
-              <div class="form-group hidden" id="f-custom-prompt-group">
-                <label>Custom System Prompt</label>
-                <textarea id="f-custom-prompt" placeholder="Custom system prompt…" rows="6"></textarea>
-              </div>
+
               <button type="submit" class="btn-primary"><i data-lucide="phone"></i> Place Call</button>
             </form>
           </div>
@@ -1755,16 +1782,38 @@ async function loadLiveConfig() {
 // ═══════════════════════════════════════════════════════════════════
 // SINGLE CALL
 // ═══════════════════════════════════════════════════════════════════
+function toggleCallDetails() {
+  const body = document.getElementById('f-details-body');
+  const arrow = document.getElementById('f-details-arrow');
+  const collapsed = body.style.display === 'none';
+  body.style.display = collapsed ? '' : 'none';
+  arrow.textContent = collapsed ? '▾' : '▸';
+}
+
 async function submitCall(e) {
   e.preventDefault();
   const body = {
     phone: $('f-phone').value.trim(),
     lead_name: $('f-name').value.trim() || 'there',
     business_name: $('f-biz').value.trim() || 'our company',
-    service_type: $('f-service').value.trim() || 'our service',
+    service_type: $('f-service').value.trim() || 'site visit',
     agent_profile_id: $('f-agent-profile').value || null,
     sip_provider: $('f-sip-provider').value,
   };
+  // Real estate fields — only include if filled
+  const _reFields = {
+    agent_name: $('f-agent-name').value.trim(),
+    project_name: $('f-project-name').value.trim(),
+    project_type: $('f-project-type').value.trim(),
+    project_location: $('f-project-location').value.trim(),
+    project_status: $('f-project-status').value.trim(),
+    key_benefit_1: $('f-benefit-1').value.trim(),
+    key_benefit_2: $('f-benefit-2').value.trim(),
+    key_benefit_3: $('f-benefit-3').value.trim(),
+    site_visit_day_1: $('f-sv-day1').value.trim(),
+    site_visit_day_2: $('f-sv-day2').value.trim(),
+  };
+  for (const [k, v] of Object.entries(_reFields)) { if (v) body[k] = v; }
   if ($('f-custom-prompt-toggle').checked) body.system_prompt = $('f-custom-prompt').value;
   try {
     const r = await apiPost('/api/call', body);

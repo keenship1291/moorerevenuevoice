@@ -237,7 +237,17 @@ async def entrypoint(ctx: agents.JobContext) -> None:
     phone_number: Optional[str] = None
     lead_name = "there"
     business_name = "our company"
-    service_type = "our service"
+    service_type = "site visit"
+    agent_name_var = "Priya"
+    project_name = ""
+    project_type = "property"
+    project_location = ""
+    project_status = "abhi available hai"
+    key_benefit_1 = ""
+    key_benefit_2 = ""
+    key_benefit_3 = ""
+    site_visit_day_1 = "is Saturday"
+    site_visit_day_2 = "is Sunday"
     custom_prompt: Optional[str] = None
     voice_override: Optional[str] = None
     model_override: Optional[str] = None
@@ -248,16 +258,26 @@ async def entrypoint(ctx: agents.JobContext) -> None:
     if ctx.job.metadata:
         try:
             data = json.loads(ctx.job.metadata)
-            phone_number   = data.get("phone_number")
-            lead_name      = data.get("lead_name", lead_name)
-            business_name  = data.get("business_name", business_name)
-            service_type   = data.get("service_type", service_type)
-            custom_prompt  = data.get("system_prompt")
-            voice_override = data.get("voice_override")
-            model_override = data.get("model_override")
-            tools_override = data.get("tools_override")
-            sip_provider   = data.get("sip_provider", sip_provider)
-            is_inbound     = data.get("inbound", False)
+            phone_number    = data.get("phone_number")
+            lead_name       = data.get("lead_name", lead_name)
+            business_name   = data.get("business_name", business_name)
+            service_type    = data.get("service_type", service_type)
+            agent_name_var  = data.get("agent_name", agent_name_var)
+            project_name    = data.get("project_name", project_name)
+            project_type    = data.get("project_type", project_type)
+            project_location = data.get("project_location", project_location)
+            project_status  = data.get("project_status", project_status)
+            key_benefit_1   = data.get("key_benefit_1", key_benefit_1)
+            key_benefit_2   = data.get("key_benefit_2", key_benefit_2)
+            key_benefit_3   = data.get("key_benefit_3", key_benefit_3)
+            site_visit_day_1 = data.get("site_visit_day_1", site_visit_day_1)
+            site_visit_day_2 = data.get("site_visit_day_2", site_visit_day_2)
+            custom_prompt   = data.get("system_prompt")
+            voice_override  = data.get("voice_override")
+            model_override  = data.get("model_override")
+            tools_override  = data.get("tools_override")
+            sip_provider    = data.get("sip_provider", sip_provider)
+            is_inbound      = data.get("inbound", False)
         except (json.JSONDecodeError, AttributeError):
             await _log("warning", "Invalid JSON in job metadata")
 
@@ -286,9 +306,16 @@ async def entrypoint(ctx: agents.JobContext) -> None:
         except Exception as _pe:
             await _log("warning", f"Could not load inbound persona: {_pe}")
 
-    system_prompt = build_prompt(lead_name=lead_name, business_name=business_name,
-                                  service_type=service_type, custom_prompt=custom_prompt,
-                                  inbound=is_inbound)
+    system_prompt = build_prompt(
+        lead_name=lead_name, lead_phone=phone_number or "",
+        business_name=business_name, service_type=service_type,
+        agent_name=agent_name_var, project_name=project_name,
+        project_type=project_type, project_location=project_location,
+        project_status=project_status, key_benefit_1=key_benefit_1,
+        key_benefit_2=key_benefit_2, key_benefit_3=key_benefit_3,
+        site_visit_day_1=site_visit_day_1, site_visit_day_2=site_visit_day_2,
+        custom_prompt=custom_prompt, inbound=is_inbound,
+    )
     tool_ctx = AppointmentTools(ctx, phone_number, lead_name, is_inbound=is_inbound, persona_data=_inbound_persona_data)
 
     if voice_override:
@@ -357,14 +384,18 @@ async def entrypoint(ctx: agents.JobContext) -> None:
         await _log("info", f"Call ANSWERED — {phone_number} picked up, starting AI session now")
 
     # ── Decide opening line + pre-generate it (overlaps session.start) ────────
+    from datetime import datetime as _dt
+    _hour = _dt.now().hour
+    _tod = "morning" if _hour < 12 else "afternoon" if _hour < 17 else "evening"
+
     gemini_model = os.getenv("GEMINI_MODEL", "gemini-3.1-flash-live-preview")
     opening_voice = voice_override or os.getenv("GEMINI_TTS_VOICE", "Aoede")
     if is_inbound:
         opening_line = f"Thank you for calling {business_name}. How can I help you today?"
     elif phone_number:
-        opening_line = f"Hi, am I speaking with {lead_name}?"
+        opening_line = f"Good {_tod}! {lead_name} ji se baat ho rahi hai?"
     else:
-        opening_line = "Hi there! How can I help you today?"
+        opening_line = f"Good {_tod}! Kaise madad kar sakti hoon aapki?"
     # Only immutable models (gemini-3.1) need the TTS opener; mutable models use
     # generate_reply(). Kick off generation now so it's ready by the time the
     # session has started.
@@ -439,10 +470,10 @@ async def entrypoint(ctx: agents.JobContext) -> None:
         if is_inbound:
             greeting = "The call just connected. Greet the caller warmly right now and ask how you can help."
         elif phone_number:
-            greeting = (f"The call just connected. Speak immediately — do not wait for them. "
-                        f"Open with: 'Hi, am I speaking with {lead_name}?'")
+            greeting = (f"Call abhi connect hui hai. TURANT bolo — wait mat karo. "
+                        f"Kaho: 'Good {_tod}! {lead_name} ji se baat ho rahi hai?'")
         else:
-            greeting = "Greet the caller warmly right now."
+            greeting = f"Good {_tod} bolke warmly greet karo abhi."
         try:
             await session.generate_reply(instructions=greeting)
             await _log("info", "Greeting triggered via generate_reply — agent speaking first")

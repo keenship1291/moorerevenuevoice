@@ -83,10 +83,21 @@ class CallRequest(BaseModel):
     phone: str
     lead_name: str = "there"
     business_name: str = "our company"
-    service_type: str = "our service"
+    service_type: str = "site visit"
     system_prompt: Optional[str] = None
     agent_profile_id: Optional[str] = None
     sip_provider: Optional[str] = None
+    # Real estate / project fields
+    agent_name: Optional[str] = None
+    project_name: Optional[str] = None
+    project_type: Optional[str] = None
+    project_location: Optional[str] = None
+    project_status: Optional[str] = None
+    key_benefit_1: Optional[str] = None
+    key_benefit_2: Optional[str] = None
+    key_benefit_3: Optional[str] = None
+    site_visit_day_1: Optional[str] = None
+    site_visit_day_2: Optional[str] = None
 
 
 class AgentProfileRequest(BaseModel):
@@ -176,6 +187,12 @@ async def api_dispatch_call(req: CallRequest):
         "system_prompt": effective_prompt,
         "sip_provider": req.sip_provider or await get_setting("SIP_PROVIDER", "vobiz"),
     }
+    for _field in ("agent_name", "project_name", "project_type", "project_location",
+                   "project_status", "key_benefit_1", "key_benefit_2", "key_benefit_3",
+                   "site_visit_day_1", "site_visit_day_2"):
+        _val = getattr(req, _field, None)
+        if _val:
+            metadata[_field] = _val
     if effective_voice:  metadata["voice_override"] = effective_voice
     if effective_model:  metadata["model_override"] = effective_model
     if effective_tools:  metadata["tools_override"] = effective_tools
