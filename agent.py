@@ -397,13 +397,7 @@ async def entrypoint(ctx: agents.JobContext) -> None:
         opening_line = f"Hi! {lead_name} ji se baat ho rahi hai?"
     else:
         opening_line = "Hi! Kaise madad kar sakti hoon aapki?"
-    # Only immutable models (gemini-3.1) need the TTS opener; mutable models use
-    # generate_reply(). Kick off generation now so it's ready by the time the
-    # session has started.
-    _opening_task = None
-    _needs_tts_opener = "3.1" in gemini_model
-    if _needs_tts_opener:
-        _opening_task = asyncio.create_task(_gen_opening_pcm(opening_line, opening_voice))
+    _needs_tts_opener = False  # always use generate_reply — TTS pre-gen was slow and unreliable
 
     # ── Build and start Gemini Live ──────────────────────────────────────────
     await _log("info", f"Building AI session — model={gemini_model}")
@@ -533,26 +527,18 @@ async def entrypoint(ctx: agents.JobContext) -> None:
                 await _log("warning", f"Recording start failed (non-fatal): {_exc}")
 
     # ── Greeting — make the agent SPEAK FIRST ─────────────────────────────────
-    if _needs_tts_opener:
-        try:
-            pcm = await _opening_task
-            await _play_opening_line(session, opening_line, pcm)
-            await _log("info", f"Opening line spoken via TTS: '{opening_line}'")
-        except Exception as _op_exc:
-            await _log("warning", f"TTS opening line failed: {_op_exc}")
+    if is_inbound:
+        greeting = "The call just connected. Greet the caller warmly right now and ask how you can help."
+    elif phone_number:
+        greeting = (f"Call abhi connect hui hai. TURANT bolo — wait mat karo. "
+                    f"Kaho: 'Hi! {lead_name} ji se baat ho rahi hai?'")
     else:
-        if is_inbound:
-            greeting = "The call just connected. Greet the caller warmly right now and ask how you can help."
-        elif phone_number:
-            greeting = (f"Call abhi connect hui hai. TURANT bolo — wait mat karo. "
-                        f"Kaho: 'Hi! {lead_name} ji se baat ho rahi hai?'")
-        else:
-            greeting = "Abhi warmly greet karo — kaho 'Hi! Kaise madad kar sakta/sakti hoon aapki?'"
-        try:
-            await session.generate_reply(instructions=greeting)
-            await _log("info", "Greeting triggered via generate_reply — agent speaking first")
-        except Exception as _gr_exc:
-            await _log("warning", f"generate_reply failed: {_gr_exc}")
+        greeting = "Abhi warmly greet karo — kaho 'Hi! Kaise madad kar sakta/sakti hoon aapki?'"
+    try:
+        await session.generate_reply(instructions=greeting)
+        await _log("info", "Greeting triggered via generate_reply — agent speaking first")
+    except Exception as _gr_exc:
+        await _log("warning", f"generate_reply failed: {_gr_exc}")
 
     # ── Wait for SIP participant to leave, then fallback-log if needed ────────
     if phone_number or is_inbound:
