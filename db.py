@@ -395,10 +395,10 @@ _RATE_PER_MIN = 6.5  # ₹ per billed minute — internal only
 
 
 def _billed_minutes(seconds: int) -> float:
-    """Round up to nearest 0.5 min."""
+    """Round up to nearest 0.5 min. Minimum 0.5 min per call (hang-ups still cost)."""
     if not seconds or seconds <= 0:
-        return 0.0
-    return _math.ceil((seconds / 60) * 2) / 2
+        return 0.5  # minimum billing unit — hang-up calls still incur a charge
+    return max(0.5, _math.ceil((seconds / 60) * 2) / 2)
 
 
 async def get_billing_summary() -> dict:
