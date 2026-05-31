@@ -34,7 +34,7 @@ except ImportError:
     _HAS_ROOM_OPTIONS = False
 from livekit.plugins import noise_cancellation, silero
 
-from db import init_db, log_error, get_enabled_tools, get_setting
+from db import init_db, log_call as _db_log_call, log_error, get_enabled_tools, get_setting
 from prompts import build_prompt, INBOUND_SYSTEM_PROMPT
 from tools import AppointmentTools
 
@@ -429,30 +429,47 @@ async def entrypoint(ctx: agents.JobContext) -> None:
     await session.start(**_session_kwargs)
     await _log("info", "Agent session started — AI ready, generating greeting")
 
-    # ── Register disconnect listeners NOW — before greeting — so early hang-ups are caught ──
+    # ── Fallback logger — runs if model never calls end_call() ───────────────
+    # Defined here so the callbacks below can schedule it as a task.
     _sip_identity = f"sip_{phone_number}" if phone_number else None
     _disconnect_event = asyncio.Event()
+    _fallback_logged = False  # separate flag to prevent double-logging from callback + wait
 
+    async def _do_fallback_log():
+        nonlocal _fallback_logged
+        if tool_ctx._call_logged or _fallback_logged:
+            return
+        _fallback_logged = True
+        duration = int(time.time() - tool_ctx._call_start_time)
+        try:
+            await _db_log_call(
+                phone_number=tool_ctx.phone_number or "unknown",
+                lead_name=tool_ctx.lead_name,
+                outcome="dropped",
+                reason="call ended before agent logged outcome",
+                duration_seconds=duration,
+                recording_url=tool_ctx.recording_url,
+            )
+            await _log("info", f"Fallback call logged — duration={duration}s outcome=dropped")
+        except Exception as _le:
+            await _log("warning", f"Fallback log failed: {_le}")
+
+    # ── Register disconnect listeners BEFORE greeting so early hang-ups are caught ──
     def _on_participant_disconnected(participant: rtc.RemoteParticipant):
-        if _sip_identity and participant.identity == _sip_identity:
+        is_sip = (_sip_identity and participant.identity == _sip_identity) \
+                 or participant.identity.startswith("sip_")
+        if is_sip:
             _disconnect_event.set()
-        elif participant.identity.startswith("sip_"):
-            _disconnect_event.set()
+            try:
+                asyncio.get_event_loop().create_task(_do_fallback_log())
+            except Exception:
+                pass
 
     def _on_disconnected():
         _disconnect_event.set()
 
     ctx.room.on("participant_disconnected", _on_participant_disconnected)
     ctx.room.on("disconnected", _on_disconnected)
-
-    # Also check if the SIP participant already left before we registered the listener
-    existing_sip = any(
-        p.identity == _sip_identity or p.identity.startswith("sip_")
-        for p in ctx.room.remote_participants.values()
-    )
-    if (phone_number or is_inbound) and not existing_sip and _sip_identity:
-        await _log("warning", "SIP participant not found after session start — may have already disconnected")
-        _disconnect_event.set()
 
     # ── Optional S3 recording ────────────────────────────────────────────────
     if phone_number:
@@ -510,24 +527,7 @@ async def entrypoint(ctx: agents.JobContext) -> None:
             await _log("warning", "Call reached 1-hour safety timeout — shutting down")
 
         await _log("info", f"SIP participant disconnected — ending session for {phone_number}")
-
-        # Fallback log: fires for any call where model never called end_call()
-        if not tool_ctx._call_logged:
-            duration = int(time.time() - tool_ctx._call_start_time)
-            try:
-                from db import log_call as _log_call
-                await _log_call(
-                    phone_number=tool_ctx.phone_number or "unknown",
-                    lead_name=tool_ctx.lead_name,
-                    outcome="dropped",
-                    reason="call ended before agent could log outcome",
-                    duration_seconds=duration,
-                    recording_url=tool_ctx.recording_url,
-                )
-                await _log("info", f"Fallback call log written — duration={duration}s outcome=dropped")
-            except Exception as _le:
-                await _log("warning", f"Fallback call log failed: {_le}")
-
+        await _do_fallback_log()  # no-op if already logged by callback or end_call()
         await session.aclose()
     else:
         _done = asyncio.Event()
