@@ -1637,8 +1637,17 @@ tbody tr:hover td { background: var(--gray-50); }
       <!-- ═══ BILLING TAB ═══ -->
       <div id="tab-billing" class="tab-panel">
         <div class="page-header">
-          <div class="page-title">Billing</div>
-          <div class="page-sub">Your usage summary and call costs.</div>
+          <div>
+            <div class="page-title">Billing</div>
+            <div class="page-sub">Your usage summary and call costs.</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;flex-shrink:0">
+            <span id="bill-rate-badge" style="font-size:12px;color:var(--text-3);background:var(--surface-2);padding:4px 10px;border-radius:6px"></span>
+            <button id="bill-currency-toggle" onclick="toggleBillingCurrency()" style="display:flex;align-items:center;gap:6px;padding:7px 14px;border-radius:8px;border:1px solid var(--border);background:var(--surface-2);color:var(--text-1);cursor:pointer;font-size:13px;font-weight:600">
+              <i data-lucide="arrow-left-right" style="width:14px;height:14px"></i>
+              <span id="bill-currency-label">Switch to $USD</span>
+            </button>
+          </div>
         </div>
 
         <!-- KPI cards -->
@@ -1649,7 +1658,7 @@ tbody tr:hover td { background: var(--gray-50); }
             <div class="label">Total Mins Used</div>
           </div>
           <div class="card kpi">
-            <div class="kpi-icon green"><i data-lucide="indian-rupee"></i></div>
+            <div class="kpi-icon green" id="bill-cost-icon"><i data-lucide="indian-rupee"></i></div>
             <div class="value accent2" id="bill-total-cost">—</div>
             <div class="label">Total Cost</div>
           </div>
@@ -1669,7 +1678,7 @@ tbody tr:hover td { background: var(--gray-50); }
         <div class="card">
           <h2>Monthly Breakdown</h2>
           <table class="data-table" id="billing-monthly-table">
-            <thead><tr><th>Month</th><th>Calls</th><th>Minutes Used</th><th>Cost (₹)</th></tr></thead>
+            <thead><tr><th>Month</th><th>Calls</th><th>Minutes Used</th><th id="bill-monthly-cost-header">Cost (₹)</th></tr></thead>
             <tbody><tr><td colspan="4" style="text-align:center;color:var(--text-3)">Loading…</td></tr></tbody>
           </table>
         </div>
@@ -1678,7 +1687,7 @@ tbody tr:hover td { background: var(--gray-50); }
         <div class="card">
           <h2>Recent Call Costs</h2>
           <table class="data-table" id="billing-calls-table">
-            <thead><tr><th>Date</th><th>Lead</th><th>Outcome</th><th>Duration</th><th>Cost (₹)</th></tr></thead>
+            <thead><tr><th>Date</th><th>Lead</th><th>Outcome</th><th>Duration</th><th id="bill-calls-cost-header">Cost (₹)</th></tr></thead>
             <tbody><tr><td colspan="5" style="text-align:center;color:var(--text-3)">Loading…</td></tr></tbody>
           </table>
         </div>
@@ -2493,50 +2502,86 @@ window.createInboundTrunk = async () => {
 // ═══════════════════════════════════════════════════════════════════
 // BILLING
 // ═══════════════════════════════════════════════════════════════════
-async function loadBilling() {
-  try {
-    const d = await api('/api/billing');
+let _billingData = null;
+let _billingCurrency = 'INR'; // 'INR' or 'USD'
+const _USD_RATE = 95;
 
-    $('bill-total-mins').textContent   = (d.total_billed_minutes || 0) + ' min';
-    $('bill-total-cost').textContent   = '₹' + (d.total_cost || 0).toLocaleString('en-IN', {minimumFractionDigits:2, maximumFractionDigits:2});
-    $('bill-month-cost').textContent   = '₹' + (d.this_month_cost || 0).toLocaleString('en-IN', {minimumFractionDigits:2, maximumFractionDigits:2});
-    $('bill-total-calls').textContent  = d.total_calls || 0;
+function toggleBillingCurrency() {
+  _billingCurrency = _billingCurrency === 'INR' ? 'USD' : 'INR';
+  if (_billingData) renderBilling(_billingData);
+}
 
-    // Monthly breakdown
-    const monthly = d.monthly_breakdown || [];
-    const mBody = $('billing-monthly-table').querySelector('tbody');
-    if (!monthly.length) {
-      mBody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--text-3)">No data yet</td></tr>';
-    } else {
+function _fmtCost(inrAmount) {
+  if (_billingCurrency === 'USD') {
+    const usd = inrAmount / _USD_RATE;
+    return '$' + usd.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+  }
+  return '₹' + inrAmount.toLocaleString('en-IN', {minimumFractionDigits:2, maximumFractionDigits:2});
+}
+
+function renderBilling(d) {
+  const isUSD = _billingCurrency === 'USD';
+  const sym = isUSD ? '$' : '₹';
+
+  // Toggle button
+  $('bill-currency-label').textContent = isUSD ? 'Switch to ₹INR' : 'Switch to $USD';
+  $('bill-rate-badge').textContent = '';
+  // Swap icon
+  const iconEl = $('bill-cost-icon');
+  iconEl.innerHTML = isUSD ? '<i data-lucide="dollar-sign"></i>' : '<i data-lucide="indian-rupee"></i>';
+  if (window.lucide) lucide.createIcons();
+
+  // Table headers
+  $('bill-monthly-cost-header').textContent = `Cost (${sym})`;
+  $('bill-calls-cost-header').textContent   = `Cost (${sym})`;
+
+  $('bill-total-mins').textContent  = (d.total_billed_minutes || 0) + ' min';
+  $('bill-total-cost').textContent  = _fmtCost(d.total_cost || 0);
+  $('bill-month-cost').textContent  = _fmtCost(d.this_month_cost || 0);
+  $('bill-total-calls').textContent = d.total_calls || 0;
+
+  // Monthly breakdown
+  const monthly = d.monthly_breakdown || [];
+  const mBody = $('billing-monthly-table').querySelector('tbody');
+  if (!monthly.length) {
+    mBody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--text-3)">No data yet</td></tr>';
+  } else {
       mBody.innerHTML = monthly.map(m => `
         <tr>
           <td><strong>${m.month}</strong></td>
           <td>${m.calls}</td>
           <td>${m.billed_minutes} min</td>
-          <td><strong>₹${Number(m.cost).toLocaleString('en-IN', {minimumFractionDigits:2,maximumFractionDigits:2})}</strong></td>
+          <td><strong>${_fmtCost(Number(m.cost))}</strong></td>
         </tr>`).join('');
-    }
+  }
 
-    // Per-call breakdown
-    const calls = d.recent_calls || [];
-    const cBody = $('billing-calls-table').querySelector('tbody');
-    if (!calls.length) {
-      cBody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-3)">No calls yet</td></tr>';
-    } else {
-      cBody.innerHTML = calls.map(c => {
-        const ts = (c.timestamp || '').slice(0, 16).replace('T', ' ');
-        const actualDur = c.duration_seconds > 0
-          ? (Math.floor(c.duration_seconds / 60) + 'm ' + (c.duration_seconds % 60) + 's')
-          : '—';
-        return `<tr>
-          <td style="font-size:0.8rem;color:var(--text-2)">${ts}</td>
-          <td>${c.lead_name}</td>
-          <td>${outcomeBadge(c.outcome)}</td>
-          <td>${actualDur}</td>
-          <td><strong>₹${Number(c.cost).toFixed(2)}</strong></td>
-        </tr>`;
-      }).join('');
-    }
+  // Per-call breakdown
+  const calls = d.recent_calls || [];
+  const cBody = $('billing-calls-table').querySelector('tbody');
+  if (!calls.length) {
+    cBody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-3)">No calls yet</td></tr>';
+  } else {
+    cBody.innerHTML = calls.map(c => {
+      const ts = (c.timestamp || '').slice(0, 16).replace('T', ' ');
+      const actualDur = c.duration_seconds > 0
+        ? (Math.floor(c.duration_seconds / 60) + 'm ' + (c.duration_seconds % 60) + 's')
+        : '—';
+      return `<tr>
+        <td style="font-size:0.8rem;color:var(--text-2)">${ts}</td>
+        <td>${c.lead_name}</td>
+        <td>${outcomeBadge(c.outcome)}</td>
+        <td>${actualDur}</td>
+        <td><strong>${_fmtCost(Number(c.cost))}</strong></td>
+      </tr>`;
+    }).join('');
+  }
+}
+
+async function loadBilling() {
+  try {
+    const d = await api('/api/billing');
+    _billingData = d;
+    renderBilling(d);
   } catch(e) { console.error('Billing error:', e); }
 }
 
