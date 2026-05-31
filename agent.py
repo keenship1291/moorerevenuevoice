@@ -34,7 +34,7 @@ except ImportError:
     _HAS_ROOM_OPTIONS = False
 from livekit.plugins import noise_cancellation, silero
 
-from db import init_db, log_call as _db_log_call, log_error, get_enabled_tools, get_setting
+from db import init_db, log_call as _db_log_call, log_call_sync as _db_log_call_sync, log_error, get_enabled_tools, get_setting
 from prompts import build_prompt, INBOUND_SYSTEM_PROMPT
 from tools import AppointmentTools
 
@@ -394,9 +394,9 @@ async def entrypoint(ctx: agents.JobContext) -> None:
     if is_inbound:
         opening_line = f"Thank you for calling {business_name}. How can I help you today?"
     elif phone_number:
-        opening_line = f"Good {_tod}! {lead_name} ji se baat ho rahi hai?"
+        opening_line = f"Hi! {lead_name} ji se baat ho rahi hai?"
     else:
-        opening_line = f"Good {_tod}! Kaise madad kar sakti hoon aapki?"
+        opening_line = "Hi! Kaise madad kar sakti hoon aapki?"
     # Only immutable models (gemini-3.1) need the TTS opener; mutable models use
     # generate_reply(). Kick off generation now so it's ready by the time the
     # session has started.
@@ -456,29 +456,42 @@ async def entrypoint(ctx: agents.JobContext) -> None:
             await _log("warning", f"Fallback log failed: {_le}")
 
     # ── Register disconnect listeners BEFORE greeting so early hang-ups are caught ──
+    def _sync_log_in_thread():
+        """Fire a synchronous DB write in a daemon thread — survives event-loop teardown."""
+        if tool_ctx._call_logged or _fallback_logged:
+            return
+        import threading
+        duration = int(time.time() - tool_ctx._call_start_time)
+        t = threading.Thread(
+            target=_db_log_call_sync,
+            args=(tool_ctx.phone_number or "unknown", tool_ctx.lead_name,
+                  "dropped", "call ended before agent logged outcome",
+                  duration, tool_ctx.recording_url),
+            daemon=True,
+        )
+        t.start()
+        t.join(timeout=12)  # block briefly so log completes before process exits
+
     def _on_participant_disconnected(participant: rtc.RemoteParticipant):
         is_sip = (_sip_identity and participant.identity == _sip_identity) \
                  or participant.identity.startswith("sip_")
         if is_sip:
             _disconnect_event.set()
-            try:
-                asyncio.get_event_loop().create_task(_do_fallback_log())
-            except Exception:
-                pass
+            _sync_log_in_thread()
 
     def _on_disconnected():
         _disconnect_event.set()
+        _sync_log_in_thread()
 
     ctx.room.on("participant_disconnected", _on_participant_disconnected)
     ctx.room.on("disconnected", _on_disconnected)
 
     # ── Guaranteed flush on job teardown ─────────────────────────────────────
-    # When the caller hangs up, LiveKit tears down the job and cancels this
-    # entrypoint coroutine — killing any create_task(_do_fallback_log()) before
-    # it finishes. Shutdown callbacks are awaited by the framework during
-    # graceful shutdown, so this is the only path that survives a teardown race.
-    # _do_fallback_log is idempotent, so it co-exists with the callback/wait paths.
-    ctx.add_shutdown_callback(_do_fallback_log)
+    # Shutdown callbacks run as tasks but the event loop may already be closing.
+    # Use the sync thread path as the primary guarantee; async path is a bonus.
+    async def _shutdown_log(_reason: str = "") -> None:
+        _sync_log_in_thread()
+    ctx.add_shutdown_callback(_shutdown_log)
 
     # Catch the race where the caller hung up between answer and listener
     # registration — the disconnect event already fired and we'd otherwise
@@ -532,9 +545,9 @@ async def entrypoint(ctx: agents.JobContext) -> None:
             greeting = "The call just connected. Greet the caller warmly right now and ask how you can help."
         elif phone_number:
             greeting = (f"Call abhi connect hui hai. TURANT bolo — wait mat karo. "
-                        f"Kaho: 'Good {_tod}! {lead_name} ji se baat ho rahi hai?'")
+                        f"Kaho: 'Hi! {lead_name} ji se baat ho rahi hai?'")
         else:
-            greeting = f"Good {_tod} bolke warmly greet karo abhi."
+            greeting = "Abhi warmly greet karo — kaho 'Hi! Kaise madad kar sakta/sakti hoon aapki?'"
         try:
             await session.generate_reply(instructions=greeting)
             await _log("info", "Greeting triggered via generate_reply — agent speaking first")

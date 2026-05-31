@@ -272,6 +272,36 @@ async def log_call(
     await db.table("call_logs").insert(row).execute()
 
 
+def log_call_sync(
+    phone_number: str, lead_name: Optional[str], outcome: str, reason: str,
+    duration_seconds: int, recording_url: Optional[str] = None,
+) -> None:
+    """Synchronous call logger — safe to call from threads or during event-loop teardown."""
+    import requests as _req
+    url = _default("SUPABASE_URL")
+    key = _default("SUPABASE_SERVICE_KEY")
+    if not url or not key:
+        return
+    row = {
+        "id": str(uuid.uuid4()), "phone_number": phone_number,
+        "lead_name": lead_name, "outcome": outcome, "reason": reason,
+        "duration_seconds": duration_seconds,
+        "timestamp": datetime.now().isoformat(),
+    }
+    if recording_url:
+        row["recording_url"] = recording_url
+    try:
+        _req.post(
+            f"{url.rstrip('/')}/rest/v1/call_logs",
+            json=row,
+            headers={"apikey": key, "Authorization": f"Bearer {key}",
+                     "Content-Type": "application/json", "Prefer": "return=minimal"},
+            timeout=10,
+        )
+    except Exception:
+        pass
+
+
 async def get_all_calls(page: int = 1, limit: int = 20) -> list:
     db = await _adb()
     offset = (page - 1) * limit
