@@ -540,21 +540,28 @@ async def entrypoint(ctx: agents.JobContext) -> None:
     # ── Greeting — make the agent SPEAK FIRST ─────────────────────────────────
     if _needs_tts_opener and _opening_task is not None:
         try:
-            pcm = await asyncio.wait_for(_opening_task, timeout=4.0)
+            pcm = await asyncio.wait_for(_opening_task, timeout=10.0)
             await _play_opening_line(session, opening_line, pcm)
             await _log("info", f"Opening line spoken via TTS: '{opening_line}'")
         except Exception as _op_exc:
-            await _log("warning", f"TTS opening failed, falling back to generate_reply: {_op_exc}")
+            await _log("warning", f"TTS opening failed ({type(_op_exc).__name__}: {_op_exc}), trying session.say fallback")
             try:
-                if is_inbound:
-                    _gr = "The call just connected. Greet the caller warmly right now and ask how you can help."
-                elif phone_number:
-                    _gr = f"Call abhi connect hui hai. TURANT bolo — kaho: 'Hi! {lead_name} ji se baat ho rahi hai?'"
-                else:
-                    _gr = "Abhi warmly greet karo — kaho 'Hi! Kaise madad kar sakta/sakti hoon aapki?'"
-                await session.generate_reply(instructions=_gr)
-            except Exception:
-                pass
+                # session.say(text) works even when generate_reply() is blocked
+                handle = session.say(opening_line)
+                await handle.wait_for_playout()
+                await _log("info", f"Opening line spoken via session.say fallback: '{opening_line}'")
+            except Exception as _say_exc:
+                await _log("warning", f"session.say fallback also failed ({_say_exc}), trying generate_reply")
+                try:
+                    if is_inbound:
+                        _gr = "The call just connected. Greet the caller warmly right now and ask how you can help."
+                    elif phone_number:
+                        _gr = f"Call abhi connect hui hai. TURANT bolo — kaho: 'Hi! {lead_name} ji se baat ho rahi hai?'"
+                    else:
+                        _gr = "Abhi warmly greet karo — kaho 'Hi! Kaise madad kar sakta/sakti hoon aapki?'"
+                    await session.generate_reply(instructions=_gr)
+                except Exception as _gr_exc:
+                    await _log("error", f"All greeting methods failed — agent will be silent: {_gr_exc}")
     else:
         if is_inbound:
             greeting = "The call just connected. Greet the caller warmly right now and ask how you can help."
