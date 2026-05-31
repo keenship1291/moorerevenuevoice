@@ -42,6 +42,7 @@ class AppointmentTools(llm.ToolContext):
         self._call_start_time = time.time()
         self._sip_domain = os.getenv("VOBIZ_SIP_DOMAIN", "")
         self.recording_url: Optional[str] = None
+        self._call_logged = False  # set True when end_call() fires so agent.py won't double-log
         super().__init__(tools=[])
 
     def build_tool_list(self, enabled: list) -> list:
@@ -124,6 +125,7 @@ class AppointmentTools(llm.ToolContext):
         reason: brief description
         """
         duration = int(time.time() - self._call_start_time)
+        self._call_logged = True
         try:
             await log_call(
                 phone_number=self.phone_number or "unknown",

@@ -503,6 +503,24 @@ async def entrypoint(ctx: agents.JobContext) -> None:
             await _log("warning", "Call reached 1-hour safety timeout — shutting down")
 
         await _log("info", f"SIP participant disconnected — ending session for {phone_number}")
+
+        # Fallback log: if model never called end_call() (early hang-up, etc.), log it now
+        if not tool_ctx._call_logged:
+            duration = int(time.time() - tool_ctx._call_start_time)
+            try:
+                from db import log_call as _log_call
+                await _log_call(
+                    phone_number=tool_ctx.phone_number or "unknown",
+                    lead_name=tool_ctx.lead_name,
+                    outcome="dropped",
+                    reason="call ended before agent could log outcome",
+                    duration_seconds=duration,
+                    recording_url=tool_ctx.recording_url,
+                )
+                await _log("info", f"Fallback call log written — duration={duration}s outcome=dropped")
+            except Exception as _le:
+                await _log("warning", f"Fallback call log failed: {_le}")
+
         await session.aclose()
     else:
         _done = asyncio.Event()
