@@ -1678,8 +1678,8 @@ tbody tr:hover td { background: var(--gray-50); }
         <div class="card">
           <h2>Recent Call Costs</h2>
           <table class="data-table" id="billing-calls-table">
-            <thead><tr><th>Date</th><th>Lead</th><th>Outcome</th><th>Actual Duration</th><th>Billed Mins</th><th>Cost (₹)</th></tr></thead>
-            <tbody><tr><td colspan="6" style="text-align:center;color:var(--text-3)">Loading…</td></tr></tbody>
+            <thead><tr><th>Date</th><th>Lead</th><th>Outcome</th><th>Duration</th><th>Cost (₹)</th></tr></thead>
+            <tbody><tr><td colspan="5" style="text-align:center;color:var(--text-3)">Loading…</td></tr></tbody>
           </table>
         </div>
       </div>
@@ -2533,7 +2533,6 @@ async function loadBilling() {
           <td>${c.lead_name}</td>
           <td>${outcomeBadge(c.outcome)}</td>
           <td>${actualDur}</td>
-          <td>${c.billed_minutes} min</td>
           <td><strong>₹${Number(c.cost).toFixed(2)}</strong></td>
         </tr>`;
       }).join('');
