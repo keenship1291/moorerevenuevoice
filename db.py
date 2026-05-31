@@ -351,6 +351,82 @@ async def get_stats() -> dict:
     }
 
 
+# ── Billing ──────────────────────────────────────────────────────────────────
+
+import math as _math
+
+_RATE_PER_MIN = 6.5  # ₹ per billed minute — internal only
+
+
+def _billed_minutes(seconds: int) -> float:
+    """Round up to nearest 0.5 min."""
+    if not seconds or seconds <= 0:
+        return 0.0
+    return _math.ceil((seconds / 60) * 2) / 2
+
+
+async def get_billing_summary() -> dict:
+    db = await _adb()
+    rows = (
+        await db.table("call_logs")
+        .select("id, lead_name, phone_number, outcome, duration_seconds, timestamp")
+        .order("timestamp", desc=True)
+        .execute()
+    ).data or []
+
+    total_billed_mins = 0.0
+    monthly: dict = {}
+    recent_calls = []
+
+    for r in rows:
+        secs = r.get("duration_seconds") or 0
+        bm = _billed_minutes(secs)
+        cost = round(bm * _RATE_PER_MIN, 2)
+        total_billed_mins += bm
+
+        # Monthly grouping (YYYY-MM)
+        ts = (r.get("timestamp") or "")[:7]
+        if ts:
+            if ts not in monthly:
+                monthly[ts] = {"month": ts, "calls": 0, "billed_minutes": 0.0, "cost": 0.0}
+            monthly[ts]["calls"] += 1
+            monthly[ts]["billed_minutes"] += bm
+            monthly[ts]["cost"] = round(monthly[ts]["cost"] + cost, 2)
+
+        if len(recent_calls) < 50:
+            recent_calls.append({
+                "id": r.get("id"),
+                "lead_name": r.get("lead_name") or "—",
+                "phone_number": r.get("phone_number"),
+                "outcome": r.get("outcome"),
+                "duration_seconds": secs,
+                "billed_minutes": bm,
+                "cost": cost,
+                "timestamp": r.get("timestamp"),
+            })
+
+    total_cost = round(total_billed_mins * _RATE_PER_MIN, 2)
+
+    # This month
+    this_month = datetime.now().strftime("%Y-%m")
+    this_month_data = monthly.get(this_month, {"calls": 0, "billed_minutes": 0.0, "cost": 0.0})
+
+    monthly_list = sorted(monthly.values(), key=lambda x: x["month"], reverse=True)
+    for m in monthly_list:
+        m["billed_minutes"] = round(m["billed_minutes"], 1)
+
+    return {
+        "total_calls": len(rows),
+        "total_billed_minutes": round(total_billed_mins, 1),
+        "total_cost": total_cost,
+        "this_month_calls": this_month_data["calls"],
+        "this_month_billed_minutes": round(this_month_data["billed_minutes"], 1),
+        "this_month_cost": this_month_data["cost"],
+        "monthly_breakdown": monthly_list,
+        "recent_calls": recent_calls,
+    }
+
+
 # ── Campaigns ─────────────────────────────────────────────────────────────────
 
 async def create_campaign(

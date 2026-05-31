@@ -881,6 +881,7 @@ tbody tr:hover td { background: var(--gray-50); }
   <button data-tab="appointments">Appointments</button>
   <button data-tab="calls">Call Logs</button>
   <button data-tab="crm">CRM</button>
+  <button data-tab="billing">Billing</button>
   <button data-tab="settings">Settings</button>
   <button data-tab="logs">Logs</button>
   <button data-tab="inbound-overview">Inbound Overview</button>
@@ -959,6 +960,9 @@ tbody tr:hover td { background: var(--gray-50); }
 
     <div class="nav-section">
       <div class="nav-section-label">System</div>
+      <button class="nav-btn" data-stab="billing">
+        <span class="nb-icon"><i data-lucide="receipt"></i></span><span>Billing</span>
+      </button>
       <button class="nav-btn" data-stab="settings">
         <span class="nb-icon"><i data-lucide="settings"></i></span><span>Settings</span>
       </button>
@@ -1042,7 +1046,7 @@ tbody tr:hover td { background: var(--gray-50); }
           </div>
         </div>
 
-        <div class="card">
+        <div class="card" style="display:none">
           <h2>Live Configuration</h2>
           <div class="config-chips" id="config-chips">
             <span class="chip">Loading…</span>
@@ -1630,6 +1634,56 @@ tbody tr:hover td { background: var(--gray-50); }
         </div>
       </div>
 
+      <!-- ═══ BILLING TAB ═══ -->
+      <div id="tab-billing" class="tab-panel">
+        <div class="page-header">
+          <div class="page-title">Billing</div>
+          <div class="page-sub">Your usage summary and call costs.</div>
+        </div>
+
+        <!-- KPI cards -->
+        <div class="card-grid" style="grid-template-columns:repeat(4,1fr)" id="billing-kpi-grid">
+          <div class="card kpi">
+            <div class="kpi-icon yellow"><i data-lucide="clock"></i></div>
+            <div class="value" id="bill-total-mins">—</div>
+            <div class="label">Total Mins Used</div>
+          </div>
+          <div class="card kpi">
+            <div class="kpi-icon green"><i data-lucide="indian-rupee"></i></div>
+            <div class="value accent2" id="bill-total-cost">—</div>
+            <div class="label">Total Cost</div>
+          </div>
+          <div class="card kpi">
+            <div class="kpi-icon blue"><i data-lucide="calendar"></i></div>
+            <div class="value" id="bill-month-cost">—</div>
+            <div class="label">This Month</div>
+          </div>
+          <div class="card kpi">
+            <div class="kpi-icon yellow"><i data-lucide="phone-call"></i></div>
+            <div class="value" id="bill-total-calls">—</div>
+            <div class="label">Calls Billed</div>
+          </div>
+        </div>
+
+        <!-- Monthly breakdown -->
+        <div class="card">
+          <h2>Monthly Breakdown</h2>
+          <table class="data-table" id="billing-monthly-table">
+            <thead><tr><th>Month</th><th>Calls</th><th>Minutes Used</th><th>Cost (₹)</th></tr></thead>
+            <tbody><tr><td colspan="4" style="text-align:center;color:var(--text-3)">Loading…</td></tr></tbody>
+          </table>
+        </div>
+
+        <!-- Per-call billing -->
+        <div class="card">
+          <h2>Recent Call Costs</h2>
+          <table class="data-table" id="billing-calls-table">
+            <thead><tr><th>Date</th><th>Lead</th><th>Outcome</th><th>Actual Duration</th><th>Billed Mins</th><th>Cost (₹)</th></tr></thead>
+            <tbody><tr><td colspan="6" style="text-align:center;color:var(--text-3)">Loading…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
     </main>
   </div><!-- /main-wrap -->
 </div><!-- /shell -->
@@ -1642,7 +1696,7 @@ const tabTitles = {
   stats:'Dashboard', single:'Single Call', batch:'Batch Call',
   campaigns:'Campaigns', agents:'Agent Profiles', prompt:'AI Prompt',
   appointments:'Appointments', calls:'Call Logs', crm:'CRM',
-  settings:'Settings', logs:'Logs',
+  billing:'Billing', settings:'Settings', logs:'Logs',
   'inbound-overview':'Inbound Overview', personas:'Inbound Personas',
   'inbound-setup':'Inbound Setup',
 };
@@ -1695,6 +1749,7 @@ function switchTab(name) {
   else if (name === 'calls') loadCalls();
   else if (name === 'appointments') loadAppointments();
   else if (name === 'crm') loadCRM();
+  else if (name === 'billing') loadBilling();
   else if (name === 'settings') loadSettings();
   else if (name === 'prompt') loadPrompt();
   else if (name === 'campaigns') loadCampaigns();
@@ -2434,6 +2489,57 @@ window.createInboundTrunk = async () => {
     loadInboundStatus();
   } catch(e) { toast('Inbound trunk creation failed — check provider credentials in Settings', 'err'); }
 };
+
+// ═══════════════════════════════════════════════════════════════════
+// BILLING
+// ═══════════════════════════════════════════════════════════════════
+async function loadBilling() {
+  try {
+    const d = await api('/api/billing');
+
+    $('bill-total-mins').textContent   = (d.total_billed_minutes || 0) + ' min';
+    $('bill-total-cost').textContent   = '₹' + (d.total_cost || 0).toLocaleString('en-IN', {minimumFractionDigits:2, maximumFractionDigits:2});
+    $('bill-month-cost').textContent   = '₹' + (d.this_month_cost || 0).toLocaleString('en-IN', {minimumFractionDigits:2, maximumFractionDigits:2});
+    $('bill-total-calls').textContent  = d.total_calls || 0;
+
+    // Monthly breakdown
+    const monthly = d.monthly_breakdown || [];
+    const mBody = $('billing-monthly-table').querySelector('tbody');
+    if (!monthly.length) {
+      mBody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--text-3)">No data yet</td></tr>';
+    } else {
+      mBody.innerHTML = monthly.map(m => `
+        <tr>
+          <td><strong>${m.month}</strong></td>
+          <td>${m.calls}</td>
+          <td>${m.billed_minutes} min</td>
+          <td><strong>₹${Number(m.cost).toLocaleString('en-IN', {minimumFractionDigits:2,maximumFractionDigits:2})}</strong></td>
+        </tr>`).join('');
+    }
+
+    // Per-call breakdown
+    const calls = d.recent_calls || [];
+    const cBody = $('billing-calls-table').querySelector('tbody');
+    if (!calls.length) {
+      cBody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-3)">No calls yet</td></tr>';
+    } else {
+      cBody.innerHTML = calls.map(c => {
+        const ts = (c.timestamp || '').slice(0, 16).replace('T', ' ');
+        const actualDur = c.duration_seconds > 0
+          ? (Math.floor(c.duration_seconds / 60) + 'm ' + (c.duration_seconds % 60) + 's')
+          : '—';
+        return `<tr>
+          <td style="font-size:0.8rem;color:var(--text-2)">${ts}</td>
+          <td>${c.lead_name}</td>
+          <td>${outcomeBadge(c.outcome)}</td>
+          <td>${actualDur}</td>
+          <td>${c.billed_minutes} min</td>
+          <td><strong>₹${Number(c.cost).toFixed(2)}</strong></td>
+        </tr>`;
+      }).join('');
+    }
+  } catch(e) { console.error('Billing error:', e); }
+}
 
 // ═══════════════════════════════════════════════════════════════════
 // INIT

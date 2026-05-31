@@ -36,8 +36,8 @@ from db import (
     SENSITIVE_KEYS, cancel_appointment, clear_errors, create_campaign, delete_campaign,
     get_all_appointments, get_all_calls, get_all_campaigns, get_all_settings,
     get_all_agent_profiles, get_agent_profile, create_agent_profile, update_agent_profile,
-    delete_agent_profile, set_default_agent_profile, get_calls_by_phone, get_campaign,
-    get_contacts, get_errors, get_logs, get_setting, get_stats, init_db, log_error,
+    delete_agent_profile, set_default_agent_profile, get_billing_summary, get_calls_by_phone,
+    get_campaign, get_contacts, get_errors, get_logs, get_setting, get_stats, init_db, log_error,
     save_settings, set_setting, update_call_notes, update_campaign_run_stats, update_campaign_status,
 )
 from prompts import DEFAULT_SYSTEM_PROMPT
@@ -239,6 +239,13 @@ async def api_update_notes(call_id: str, req: NotesRequest):
 @app.get("/api/stats")
 async def api_get_stats():
     return await get_stats()
+
+
+# ── Billing ───────────────────────────────────────────────────────────────────
+
+@app.get("/api/billing")
+async def api_get_billing():
+    return await get_billing_summary()
 
 
 # ── Appointments ──────────────────────────────────────────────────────────────
