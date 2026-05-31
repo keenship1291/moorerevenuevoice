@@ -125,15 +125,15 @@ class AppointmentTools(llm.ToolContext):
         reason: brief description
         """
         duration = int(time.time() - self._call_start_time)
-        self._call_logged = True
         try:
             await log_call(
                 phone_number=self.phone_number or "unknown",
                 lead_name=self.lead_name, outcome=outcome, reason=reason,
                 duration_seconds=duration, recording_url=self.recording_url,
             )
+            self._call_logged = True  # only mark logged after confirmed DB insert
         except Exception as exc:
-            logger.error("Failed to log call: %s", exc)
+            logger.error("Failed to log call in end_call(): %s — fallback will retry", exc)
         try:
             await self.ctx.room.disconnect()
         except Exception:

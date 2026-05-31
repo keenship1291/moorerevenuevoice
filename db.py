@@ -291,15 +291,21 @@ def log_call_sync(
     if recording_url:
         row["recording_url"] = recording_url
     try:
-        _req.post(
+        resp = _req.post(
             f"{url.rstrip('/')}/rest/v1/call_logs",
             json=row,
             headers={"apikey": key, "Authorization": f"Bearer {key}",
                      "Content-Type": "application/json", "Prefer": "return=minimal"},
             timeout=10,
         )
-    except Exception:
-        pass
+        if resp.status_code >= 300:
+            import logging as _logging
+            _logging.getLogger("outbound-agent").error(
+                "log_call_sync HTTP %s: %s", resp.status_code, resp.text[:200]
+            )
+    except Exception as _e:
+        import logging as _logging
+        _logging.getLogger("outbound-agent").error("log_call_sync failed: %s", _e)
 
 
 async def get_all_calls(page: int = 1, limit: int = 20) -> list:

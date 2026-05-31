@@ -452,7 +452,12 @@ async def entrypoint(ctx: agents.JobContext) -> None:
             )
             await _log("info", f"Fallback call logged — duration={duration}s outcome=dropped")
         except Exception as _le:
-            await _log("warning", f"Fallback log failed: {_le}")
+            await _log("warning", f"Async fallback log failed: {_le} — retrying via sync path")
+            _db_log_call_sync(
+                tool_ctx.phone_number or "unknown", tool_ctx.lead_name,
+                "dropped", "call ended before agent logged outcome (sync retry)",
+                duration, tool_ctx.recording_url,
+            )
 
     # ── Register disconnect listeners BEFORE greeting so early hang-ups are caught ──
     def _sync_log_in_thread():
