@@ -43,6 +43,8 @@ class AppointmentTools(llm.ToolContext):
         self._sip_domain = os.getenv("VOBIZ_SIP_DOMAIN", "")
         self.recording_url: Optional[str] = None
         self._call_logged = False  # set True when end_call() fires so agent.py won't double-log
+        self._booking_completed = False
+        self._last_booking_summary = ""
         super().__init__(tools=[])
 
     def build_tool_list(self, enabled: list) -> list:
@@ -88,6 +90,8 @@ class AppointmentTools(llm.ToolContext):
             booking_id = "pending"
 
         result = f"Confirmed! Booking ID: {booking_id}. See you on {date} at {time} for {service}."
+        self._booking_completed = True
+        self._last_booking_summary = f"appointment booked: {booking_id}"
 
         # For inbound calls, also create Google Calendar event + send Gmail confirmation
         if self.is_inbound and self.persona_data and email:
@@ -130,6 +134,7 @@ class AppointmentTools(llm.ToolContext):
                 phone_number=self.phone_number or "unknown",
                 lead_name=self.lead_name, outcome=outcome, reason=reason,
                 duration_seconds=duration, recording_url=self.recording_url,
+                ended_by="agent",
             )
             self._call_logged = True  # only mark logged after confirmed DB insert
         except Exception as exc:

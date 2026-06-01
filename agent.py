@@ -4,6 +4,7 @@ import logging
 import os
 import ssl
 import sys
+import time
 import certifi
 from typing import Optional
 
@@ -379,24 +380,27 @@ async def entrypoint(ctx: agents.JobContext) -> None:
             )
         except Exception as exc:
             await _log("error", f"SIP dial FAILED for {phone_number}: {exc}")
-            ring_duration = int(time.time() - tool_ctx._call_start_time)
             try:
                 await _db_log_call(
                     phone_number=phone_number,
                     lead_name=tool_ctx.lead_name,
                     outcome="no_answer",
                     reason=f"SIP dial failed: {exc}",
-                    duration_seconds=ring_duration,
+                    duration_seconds=0,
+                    ended_by="system",
                 )
             except Exception as _le:
                 _db_log_call_sync(
                     phone_number, tool_ctx.lead_name,
                     "no_answer", f"SIP dial failed: {exc}",
-                    ring_duration,
+                    0, None, "system",
                 )
             ctx.shutdown()
             return
         await _log("info", f"Call ANSWERED — {phone_number} picked up, starting AI session now")
+        tool_ctx._call_start_time = time.time()
+    elif is_inbound:
+        tool_ctx._call_start_time = time.time()
 
     # ── Decide opening line + pre-generate it (overlaps session.start) ────────
     from datetime import datetime as _dt
@@ -445,69 +449,85 @@ async def entrypoint(ctx: agents.JobContext) -> None:
     await _log("info", "Agent session started — AI ready, generating greeting")
 
     # ── Fallback logger — runs if model never calls end_call() ───────────────
-    # Defined here so the callbacks below can schedule it as a task.
     _sip_identity = f"sip_{phone_number}" if phone_number else None
     _disconnect_event = asyncio.Event()
-    _fallback_logged = False  # separate flag to prevent double-logging from callback + wait
+    _fallback_logged = False
 
     async def _do_fallback_log():
+        """Primary fallback: async, runs in the event loop after disconnect fires.
+        Only called once — blocks the sync emergency path via _fallback_logged flag."""
         nonlocal _fallback_logged
         if tool_ctx._call_logged or _fallback_logged:
             return
         _fallback_logged = True
         duration = int(time.time() - tool_ctx._call_start_time)
+        fallback_outcome = "booked" if getattr(tool_ctx, "_booking_completed", False) else "dropped"
+        fallback_reason = (
+            f"caller hung up after {getattr(tool_ctx, '_last_booking_summary', 'appointment booking')}"
+            if fallback_outcome == "booked"
+            else "caller hung up"
+        )
+        await _log("info", f"Logging cut call — duration={duration}s phone={tool_ctx.phone_number}")
         try:
             await _db_log_call(
                 phone_number=tool_ctx.phone_number or "unknown",
                 lead_name=tool_ctx.lead_name,
-                outcome="dropped",
-                reason="call ended before agent logged outcome",
+                outcome=fallback_outcome,
+                reason=fallback_reason,
                 duration_seconds=duration,
                 recording_url=tool_ctx.recording_url,
+                ended_by="caller_hungup",
             )
-            await _log("info", f"Fallback call logged — duration={duration}s outcome=dropped")
+            await _log("info", f"Cut call logged — duration={duration}s ended_by=caller_hungup")
         except Exception as _le:
-            await _log("warning", f"Async fallback log failed: {_le} — retrying via sync path")
+            await _log("warning", f"Async fallback log failed: {_le} — using sync fallback")
             _db_log_call_sync(
                 tool_ctx.phone_number or "unknown", tool_ctx.lead_name,
-                "dropped", "call ended before agent logged outcome (sync retry)",
-                duration, tool_ctx.recording_url,
+                fallback_outcome, f"{fallback_reason} (sync retry)",
+                duration, tool_ctx.recording_url, "caller_hungup",
             )
 
-    # ── Register disconnect listeners BEFORE greeting so early hang-ups are caught ──
+    # ── Register disconnect listeners — ONLY set the event, no blocking DB calls ──
+    # The actual logging happens async in _do_fallback_log() after the event fires.
+    # _sync_log_in_thread is kept ONLY as last-resort for process shutdown.
+    import threading as _threading
+
     def _sync_log_in_thread():
-        """Fire a synchronous DB write in a daemon thread — survives event-loop teardown."""
+        """Emergency sync fallback — only runs at process shutdown if async path didn't fire."""
+        nonlocal _fallback_logged
         if tool_ctx._call_logged or _fallback_logged:
             return
-        import threading
+        _fallback_logged = True
         duration = int(time.time() - tool_ctx._call_start_time)
-        t = threading.Thread(
+        fallback_outcome = "booked" if getattr(tool_ctx, "_booking_completed", False) else "dropped"
+        fallback_reason = (
+            f"caller hung up after {getattr(tool_ctx, '_last_booking_summary', 'appointment booking')}"
+            if fallback_outcome == "booked"
+            else "caller hung up"
+        )
+        t = _threading.Thread(
             target=_db_log_call_sync,
             args=(tool_ctx.phone_number or "unknown", tool_ctx.lead_name,
-                  "dropped", "call ended before agent logged outcome",
-                  duration, tool_ctx.recording_url),
+                  fallback_outcome, f"{fallback_reason} (shutdown fallback)",
+                  duration, tool_ctx.recording_url, "caller_hungup"),
             daemon=True,
         )
         t.start()
-        t.join(timeout=12)  # block briefly so log completes before process exits
+        t.join(timeout=12)
 
     def _on_participant_disconnected(participant: rtc.RemoteParticipant):
         is_sip = (_sip_identity and participant.identity == _sip_identity) \
                  or participant.identity.startswith("sip_")
         if is_sip:
-            _disconnect_event.set()
-            _sync_log_in_thread()
+            _disconnect_event.set()  # just signal — no blocking DB call here
 
     def _on_disconnected():
-        _disconnect_event.set()
-        _sync_log_in_thread()
+        _disconnect_event.set()  # just signal — no blocking DB call here
 
     ctx.room.on("participant_disconnected", _on_participant_disconnected)
     ctx.room.on("disconnected", _on_disconnected)
 
-    # ── Guaranteed flush on job teardown ─────────────────────────────────────
-    # Shutdown callbacks run as tasks but the event loop may already be closing.
-    # Use the sync thread path as the primary guarantee; async path is a bonus.
+    # ── Shutdown callback — last resort if process exits before async path fires ──
     async def _shutdown_log(_reason: str = "") -> None:
         _sync_log_in_thread()
     ctx.add_shutdown_callback(_shutdown_log)

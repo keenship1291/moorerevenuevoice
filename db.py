@@ -258,23 +258,32 @@ async def get_appointments_by_phone(phone: str) -> list:
 async def log_call(
     phone_number: str, lead_name: Optional[str], outcome: str, reason: str,
     duration_seconds: int, recording_url: Optional[str] = None, notes: Optional[str] = None,
+    ended_by: str = "unknown",
 ) -> None:
     db = await _adb()
     row: dict = {
         "id": str(uuid.uuid4()), "phone_number": phone_number, "lead_name": lead_name,
         "outcome": outcome, "reason": reason, "duration_seconds": duration_seconds,
-        "timestamp": datetime.now().isoformat(),
+        "timestamp": datetime.now().isoformat(), "ended_by": ended_by,
     }
     if recording_url:
         row["recording_url"] = recording_url
     if notes:
         row["notes"] = notes
-    await db.table("call_logs").insert(row).execute()
+    try:
+        await db.table("call_logs").insert(row).execute()
+    except Exception as _e:
+        # If ended_by column doesn't exist yet (migration pending), retry without it
+        if "ended_by" in str(_e):
+            row.pop("ended_by", None)
+            await db.table("call_logs").insert(row).execute()
+        else:
+            raise
 
 
 def log_call_sync(
     phone_number: str, lead_name: Optional[str], outcome: str, reason: str,
-    duration_seconds: int, recording_url: Optional[str] = None,
+    duration_seconds: int, recording_url: Optional[str] = None, ended_by: str = "unknown",
 ) -> None:
     """Synchronous call logger — safe to call from threads or during event-loop teardown."""
     import requests as _req
@@ -286,39 +295,57 @@ def log_call_sync(
         "id": str(uuid.uuid4()), "phone_number": phone_number,
         "lead_name": lead_name, "outcome": outcome, "reason": reason,
         "duration_seconds": duration_seconds,
-        "timestamp": datetime.now().isoformat(),
+        "timestamp": datetime.now().isoformat(), "ended_by": ended_by,
     }
     if recording_url:
         row["recording_url"] = recording_url
+    headers = {"apikey": key, "Authorization": f"Bearer {key}",
+               "Content-Type": "application/json", "Prefer": "return=minimal"}
+    endpoint = f"{url.rstrip('/')}/rest/v1/call_logs"
     try:
-        resp = _req.post(
-            f"{url.rstrip('/')}/rest/v1/call_logs",
-            json=row,
-            headers={"apikey": key, "Authorization": f"Bearer {key}",
-                     "Content-Type": "application/json", "Prefer": "return=minimal"},
-            timeout=10,
-        )
+        resp = _req.post(endpoint, json=row, headers=headers, timeout=10)
         if resp.status_code >= 300:
             import logging as _logging
-            _logging.getLogger("outbound-agent").error(
-                "log_call_sync HTTP %s: %s", resp.status_code, resp.text[:200]
-            )
+            # If ended_by column missing (migration not run yet), retry without it
+            if resp.status_code == 400 and "ended_by" in resp.text:
+                row.pop("ended_by", None)
+                resp2 = _req.post(endpoint, json=row, headers=headers, timeout=10)
+                if resp2.status_code >= 300:
+                    _logging.getLogger("outbound-agent").error(
+                        "log_call_sync retry HTTP %s: %s", resp2.status_code, resp2.text[:200]
+                    )
+            else:
+                _logging.getLogger("outbound-agent").error(
+                    "log_call_sync HTTP %s: %s", resp.status_code, resp.text[:200]
+                )
     except Exception as _e:
         import logging as _logging
         _logging.getLogger("outbound-agent").error("log_call_sync failed: %s", _e)
+
+
+def _effective_call_duration(row: dict) -> int:
+    if row.get("outcome") == "no_answer":
+        return 0
+    return int(row.get("duration_seconds") or 0)
+
+
+def _normalize_call_durations(rows: list) -> list:
+    for row in rows:
+        row["duration_seconds"] = _effective_call_duration(row)
+    return rows
 
 
 async def get_all_calls(page: int = 1, limit: int = 20) -> list:
     db = await _adb()
     offset = (page - 1) * limit
     result = await db.table("call_logs").select("*").order("timestamp", desc=True).range(offset, offset + limit - 1).execute()
-    return result.data or []
+    return _normalize_call_durations(result.data or [])
 
 
 async def get_calls_by_phone(phone: str) -> list:
     db = await _adb()
     result = await db.table("call_logs").select("*").eq("phone_number", phone).order("timestamp", desc=True).execute()
-    return result.data or []
+    return _normalize_call_durations(result.data or [])
 
 
 async def update_call_notes(call_id: str, notes: str) -> bool:
@@ -354,7 +381,7 @@ async def get_stats() -> dict:
     total_calls    = len(rows)
     booked         = sum(1 for r in rows if r.get("outcome") == "booked")
     not_interested = sum(1 for r in rows if r.get("outcome") == "not_interested")
-    durations      = [r["duration_seconds"] for r in rows if r.get("duration_seconds")]
+    durations      = [_effective_call_duration(r) for r in rows if _effective_call_duration(r)]
     avg_dur        = sum(durations) / len(durations) if durations else 0
     booking_rate   = round((booked / total_calls * 100) if total_calls else 0, 1)
     # Outcomes breakdown
@@ -375,7 +402,7 @@ async def get_stats() -> dict:
     dur_cnt: dict = defaultdict(int)
     for r in rows:
         o = r.get("outcome") or "unknown"
-        sec = r.get("duration_seconds")
+        sec = _effective_call_duration(r)
         if sec:
             dur_sum[o] += sec
             dur_cnt[o] += 1
@@ -384,6 +411,95 @@ async def get_stats() -> dict:
         "total_calls": total_calls, "booked": booked, "not_interested": not_interested,
         "avg_duration_seconds": round(avg_dur, 1), "booking_rate_percent": booking_rate,
         "outcomes": outcomes, "timeline": timeline, "duration_by_outcome": duration_by_outcome,
+    }
+
+
+async def get_cut_calls_stats() -> dict:
+    """Stats for calls that were cut/hung-up. Works with or without the ended_by column."""
+    db = await _adb()
+    try:
+        rows = (
+            await db.table("call_logs")
+            .select("id, phone_number, lead_name, outcome, reason, duration_seconds, timestamp, ended_by")
+            .order("timestamp", desc=True)
+            .execute()
+        ).data or []
+        has_ended_by = True
+    except Exception:
+        # ended_by column not yet migrated — fall back to selecting without it
+        rows = (
+            await db.table("call_logs")
+            .select("id, phone_number, lead_name, outcome, reason, duration_seconds, timestamp")
+            .order("timestamp", desc=True)
+            .execute()
+        ).data or []
+        has_ended_by = False
+
+    total_calls = len(rows)
+
+    def _is_cut(r: dict) -> bool:
+        """A call is cut if ended_by=caller_hungup, OR (no ended_by column yet and outcome=dropped)."""
+        eb = r.get("ended_by")
+        if eb == "caller_hungup":
+            return True
+        # Before migration: dropped = caller hung up before agent finished
+        if not has_ended_by or eb in (None, "unknown"):
+            return r.get("outcome") == "dropped"
+        return False
+
+    def _is_completed(r: dict) -> bool:
+        eb = r.get("ended_by")
+        if eb == "agent":
+            return True
+        if not has_ended_by or eb in (None, "unknown"):
+            return r.get("outcome") not in ("dropped", "no_answer")
+        return False
+
+    cut_rows = [r for r in rows if _is_cut(r)]
+    completed_rows = [r for r in rows if _is_completed(r)]
+
+    cut_durations = [r["duration_seconds"] for r in cut_rows if r.get("duration_seconds")]
+    avg_cut_dur = sum(cut_durations) / len(cut_durations) if cut_durations else 0
+    total_cut_talk_time = sum(cut_durations)
+
+    # Daily timeline for cut calls (last 14 days)
+    daily_cuts: dict = defaultdict(int)
+    for r in cut_rows:
+        ts = (r.get("timestamp") or "")[:10]
+        if ts:
+            daily_cuts[ts] += 1
+    today = datetime.now().date()
+    cut_timeline = [
+        {"date": (today - timedelta(days=i)).isoformat(),
+         "count": daily_cuts.get((today - timedelta(days=i)).isoformat(), 0)}
+        for i in range(13, -1, -1)
+    ]
+
+    # Recent 50 cut calls
+    recent_cut_calls = [
+        {
+            "id": r.get("id"),
+            "phone_number": r.get("phone_number"),
+            "lead_name": r.get("lead_name") or "—",
+            "outcome": r.get("outcome"),
+            "reason": r.get("reason"),
+            "duration_seconds": r.get("duration_seconds") or 0,
+            "timestamp": r.get("timestamp"),
+            "ended_by": r.get("ended_by") or ("caller_hungup" if r.get("outcome") == "dropped" else "unknown"),
+        }
+        for r in cut_rows[:50]
+    ]
+
+    return {
+        "total_calls": total_calls,
+        "total_cut_calls": len(cut_rows),
+        "total_completed_calls": len(completed_rows),
+        "total_system_calls": total_calls - len(cut_rows) - len(completed_rows),
+        "cut_rate_percent": round((len(cut_rows) / total_calls * 100) if total_calls else 0, 1),
+        "avg_cut_duration_seconds": round(avg_cut_dur, 1),
+        "total_cut_talk_time_seconds": total_cut_talk_time,
+        "cut_timeline": cut_timeline,
+        "recent_cut_calls": recent_cut_calls,
     }
 
 
@@ -415,7 +531,7 @@ async def get_billing_summary() -> dict:
     recent_calls = []
 
     for r in rows:
-        secs = r.get("duration_seconds") or 0
+        secs = _effective_call_duration(r)
         bm = _billed_minutes(secs)
         cost = round(bm * _RATE_PER_MIN, 2)
         total_billed_mins += bm

@@ -1341,6 +1341,55 @@ tbody tr:hover td { background: var(--gray-50); }
         </div>
       </div>
 
+      <!-- ═══ CUT CALLS TAB ═══ -->
+      <div id="tab-cut-calls" class="tab-panel hidden" style="display:none">
+        <div class="page-header">
+          <div class="page-title">Cut Calls</div>
+          <div class="page-sub">All calls where the phone was cut — by caller, agent, or system. Every call is counted.</div>
+        </div>
+        <!-- KPI row -->
+        <div class="kpi-row" style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:24px">
+          <div class="kpi-card card" style="padding:20px">
+            <div class="kpi-label text-muted text-sm">Total Calls</div>
+            <div class="kpi-value" id="cc-total" style="font-size:2rem;font-weight:700">—</div>
+          </div>
+          <div class="kpi-card card" style="padding:20px;border-left:3px solid #ef4444">
+            <div class="kpi-label text-muted text-sm">Caller Hung Up</div>
+            <div class="kpi-value" id="cc-hungup" style="font-size:2rem;font-weight:700;color:#ef4444">—</div>
+          </div>
+          <div class="kpi-card card" style="padding:20px;border-left:3px solid #22c55e">
+            <div class="kpi-label text-muted text-sm">Completed by Agent</div>
+            <div class="kpi-value" id="cc-completed" style="font-size:2rem;font-weight:700;color:#22c55e">—</div>
+          </div>
+          <div class="kpi-card card" style="padding:20px;border-left:3px solid #f59e0b">
+            <div class="kpi-label text-muted text-sm">Avg Talk Time (Cut)</div>
+            <div class="kpi-value" id="cc-avg-dur" style="font-size:2rem;font-weight:700;color:#f59e0b">—</div>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px">
+          <div class="card" style="padding:20px">
+            <div class="text-muted text-sm">Cut Rate</div>
+            <div id="cc-cut-rate" style="font-size:1.5rem;font-weight:700">—</div>
+          </div>
+          <div class="card" style="padding:20px">
+            <div class="text-muted text-sm">Total Talk Time (Cut Calls)</div>
+            <div id="cc-total-talk" style="font-size:1.5rem;font-weight:700">—</div>
+          </div>
+        </div>
+        <!-- Timeline chart -->
+        <div class="card" style="margin-bottom:24px">
+          <h2 style="margin-bottom:16px">Cut Calls — Last 14 Days</h2>
+          <canvas id="cc-timeline-chart" height="80"></canvas>
+        </div>
+        <!-- Cut calls table -->
+        <div class="card">
+          <h2>Recent Cut Calls</h2>
+          <div class="table-wrap">
+            <div id="cut-calls-table"><p class="text-muted text-sm">Loading...</p></div>
+          </div>
+        </div>
+      </div>
+
       <!-- ═══ CRM TAB ═══ -->
       <div id="tab-crm" class="tab-panel">
         <div class="page-header">
@@ -2196,6 +2245,54 @@ window.saveNotes = async (callId) => {
   try { await apiPatch(`/api/calls/${callId}/notes`, {notes}); toast('Notes saved'); }
   catch(e) { toast('Failed to save notes', 'err'); }
 };
+
+// ═══════════════════════════════════════════════════════════════════
+// CUT CALLS
+// ═══════════════════════════════════════════════════════════════════
+let _ccTimelineChart = null;
+
+async function loadCutCalls() {
+  try {
+    const d = await api('/api/cut-calls');
+    $('cc-total').textContent = d.total_calls ?? '—';
+    $('cc-hungup').textContent = d.total_cut_calls ?? '—';
+    $('cc-completed').textContent = d.total_completed_calls ?? '—';
+    const avgSec = d.avg_cut_duration_seconds || 0;
+    $('cc-avg-dur').textContent = avgSec >= 60 ? `${Math.floor(avgSec/60)}m ${avgSec%60}s` : `${avgSec}s`;
+    $('cc-cut-rate').textContent = `${d.cut_rate_percent ?? 0}%`;
+    const totalTalk = d.total_cut_talk_time_seconds || 0;
+    $('cc-total-talk').textContent = totalTalk >= 60 ? `${Math.floor(totalTalk/60)}m ${totalTalk%60}s` : `${totalTalk}s`;
+
+    // Timeline chart
+    const labels = (d.cut_timeline || []).map(p => p.date.slice(5));
+    const counts = (d.cut_timeline || []).map(p => p.count);
+    const ctx2d = document.getElementById('cc-timeline-chart').getContext('2d');
+    if (_ccTimelineChart) _ccTimelineChart.destroy();
+    _ccTimelineChart = new Chart(ctx2d, {
+      type: 'bar',
+      data: { labels, datasets: [{ label: 'Cut calls', data: counts, backgroundColor: '#ef4444aa' }] },
+      options: { plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } }
+    });
+
+    // Table
+    const endedByBadge = e => {
+      if (e === 'caller_hungup') return '<span class="badge badge-err">Caller Hung Up</span>';
+      if (e === 'agent') return '<span class="badge badge-ok">Agent Ended</span>';
+      if (e === 'system') return '<span class="badge badge-muted">System</span>';
+      return `<span class="badge badge-muted">${e||'unknown'}</span>`;
+    };
+    let html = '<table><tr><th>Phone</th><th>Lead</th><th>Ended By</th><th>Outcome</th><th>Talk Time</th><th>Timestamp</th></tr>';
+    for (const c of (d.recent_cut_calls || [])) {
+      const dur = c.duration_seconds || 0;
+      const durStr = dur >= 60 ? `${Math.floor(dur/60)}m ${dur%60}s` : `${dur}s`;
+      html += `<tr>
+        <td>${c.phone_number}</td><td>${c.lead_name||'—'}</td><td>${endedByBadge(c.ended_by)}</td>
+        <td>${outcomeBadge(c.outcome)}</td><td>${durStr}</td><td>${(c.timestamp||'').slice(0,16)}</td>
+      </tr>`;
+    }
+    $('cut-calls-table').innerHTML = (d.recent_cut_calls||[]).length ? html + '</table>' : '<p class="text-muted text-sm">No cut calls yet.</p>';
+  } catch(e) { $('cut-calls-table').innerHTML = '<p class="text-muted text-sm">Failed to load cut calls.</p>'; }
+}
 
 // ═══════════════════════════════════════════════════════════════════
 // CRM
